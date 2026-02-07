@@ -3,24 +3,38 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
+import BookingPage from "./pages/BookingPage";
+import AdminPage from "./pages/admin";
+import AdminRoomsRoute from "./pages/admin/RoomsRoute";
+import AdminPricingRoute from "./pages/admin/PricingRoute";
+import AdminBookingsRoute from "./pages/admin/BookingsRoute";
+import AdminSettingsRoute from "./pages/admin/SettingsRoute";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/book/:roomId" element={<BookingPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/rooms" element={<AdminRoomsRoute />} />
+            <Route path="/admin/pricing" element={<AdminPricingRoute />} />
+            <Route path="/admin/bookings" element={<AdminBookingsRoute />} />
+            <Route path="/admin/settings" element={<AdminSettingsRoute />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
