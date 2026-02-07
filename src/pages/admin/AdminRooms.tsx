@@ -14,7 +14,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Pencil, Trash2, Image, Loader2, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, Image, Loader2, Users, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatPrice } from '@/lib/supabase-helpers';
 
@@ -114,6 +114,20 @@ export default function AdminRooms() {
     setEditingRoom(room);
     setFormData({
       name: room.name,
+      description: room.description || '',
+      capacity: room.capacity,
+      base_price: room.base_price,
+      min_nights: room.min_nights,
+      amenities: room.amenities.join(', '),
+      is_active: room.is_active,
+    });
+    setDialogOpen(true);
+  };
+
+  const openCopyRoom = (room: Room) => {
+    setEditingRoom(null);
+    setFormData({
+      name: '',
       description: room.description || '',
       capacity: room.capacity,
       base_price: room.base_price,
@@ -458,6 +472,14 @@ export default function AdminRooms() {
                     >
                       <Pencil className="h-3 w-3 mr-1" />
                       Szerkesztés
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      title="Szoba másolása"
+                      onClick={() => openCopyRoom(room)}
+                    >
+                      <Copy className="h-3 w-3" />
                     </Button>
                     <Button
                       variant="outline"
