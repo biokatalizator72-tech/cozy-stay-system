@@ -4,16 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
-import { ChevronLeft, ChevronRight, Loader2, Save, CalendarIcon } from 'lucide-react';
+import { Loader2, Save, CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addWeeks, startOfWeek, endOfWeek } from 'date-fns';
+import { format, eachDayOfInterval, addMonths } from 'date-fns';
 import { hu } from 'date-fns/locale';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
+import { DateRange } from 'react-day-picker';
 
 interface Room {
   id: string;
@@ -32,59 +32,40 @@ interface PricingRule {
   min_nights: number;
 }
 
+interface BlockedDate {
+  id: string;
+  room_id: string;
+  blocked_date: string;
+  source: string | null;
+}
+
 interface DayPricing {
   price: number | null;
   min_nights: number | null;
   ruleId: string | null;
 }
 
-type ViewMode = 'week' | 'two-weeks' | 'month' | 'custom';
-
 export default function AdminPricing() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
-  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
-
-  const getDateRange = () => {
-    const today = new Date();
-    switch (viewMode) {
-      case 'week':
-        return {
-          start: startOfWeek(currentMonth, { weekStartsOn: 1 }),
-          end: endOfWeek(currentMonth, { weekStartsOn: 1 }),
-        };
-      case 'two-weeks':
-        return {
-          start: startOfWeek(currentMonth, { weekStartsOn: 1 }),
-          end: endOfWeek(addWeeks(currentMonth, 1), { weekStartsOn: 1 }),
-        };
-      case 'custom':
-        return {
-          start: customStartDate || startOfMonth(currentMonth),
-          end: customEndDate || endOfMonth(currentMonth),
-        };
-      case 'month':
-      default:
-        return {
-          start: startOfMonth(currentMonth),
-          end: endOfMonth(currentMonth),
-        };
-    }
-  };
-
-  const dateRange = getDateRange();
-  const days = eachDayOfInterval({
-    start: dateRange.start,
-    end: dateRange.end,
+  const [editedBlocked, setEditedBlocked] = useState<Record<string, Record<string, boolean>>>({});
+  
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: new Date(),
+    to: addMonths(new Date(), 1),
   });
 
+  const days = dateRange.from && dateRange.to 
+    ? eachDayOfInterval({ start: dateRange.from, end: dateRange.to })
+    : [];
+
   const fetchData = async () => {
+    if (!dateRange.from || !dateRange.to) return;
+    
     setLoading(true);
     
     const { data: roomsData } = await supabase
@@ -92,8 +73,8 @@ export default function AdminPricing() {
       .select('id, name, base_price, min_nights, is_active')
       .order('sort_order');
 
-    const startDate = format(dateRange.start, 'yyyy-MM-dd');
-    const endDate = format(dateRange.end, 'yyyy-MM-dd');
+    const startDate = format(dateRange.from, 'yyyy-MM-dd');
+    const endDate = format(dateRange.to, 'yyyy-MM-dd');
 
     const { data: rulesData } = await supabase
       .from('pricing_rules')
@@ -101,27 +82,40 @@ export default function AdminPricing() {
       .gte('end_date', startDate)
       .lte('start_date', endDate);
 
+    const { data: blockedData } = await supabase
+      .from('ical_blocked_dates')
+      .select('*')
+      .gte('blocked_date', startDate)
+      .lte('blocked_date', endDate);
+
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
+    setBlockedDates(blockedData || []);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchData();
-  }, [currentMonth, viewMode, customStartDate, customEndDate]);
+  }, [dateRange]);
 
-  const toggleRoomActive = async (roomId: string, isActive: boolean) => {
-    const { error } = await supabase
-      .from('rooms')
-      .update({ is_active: !isActive })
-      .eq('id', roomId);
-    
-    if (error) {
-      toast.error('Hiba a státusz módosításakor');
-    } else {
-      toast.success(isActive ? 'Szoba letiltva' : 'Szoba engedélyezve');
-      setRooms(rooms.map(r => r.id === roomId ? { ...r, is_active: !isActive } : r));
+  const isDateBlocked = (roomId: string, dateStr: string): boolean => {
+    // Check edited state first
+    if (editedBlocked[roomId]?.[dateStr] !== undefined) {
+      return editedBlocked[roomId][dateStr];
     }
+    // Check database
+    return blockedDates.some(b => b.room_id === roomId && b.blocked_date === dateStr);
+  };
+
+  const toggleDateBlocked = (roomId: string, dateStr: string) => {
+    const currentlyBlocked = isDateBlocked(roomId, dateStr);
+    setEditedBlocked(prev => ({
+      ...prev,
+      [roomId]: {
+        ...prev[roomId],
+        [dateStr]: !currentlyBlocked,
+      },
+    }));
   };
 
   const getPricingForDay = (roomId: string, date: Date): DayPricing => {
@@ -167,6 +161,7 @@ export default function AdminPricing() {
     setSaving(true);
     
     try {
+      // Save pricing rules
       for (const roomId of Object.keys(editedPrices)) {
         for (const dateStr of Object.keys(editedPrices[roomId])) {
           const { price, minNights } = editedPrices[roomId][dateStr];
@@ -176,7 +171,6 @@ export default function AdminPricing() {
           const priceNum = price ? parseFloat(price) : null;
           const minNightsNum = minNights ? parseInt(minNights) : 1;
 
-          // Check if there's an existing rule for this exact day
           const existingRule = pricingRules.find(
             (r) =>
               r.room_id === roomId &&
@@ -206,8 +200,27 @@ export default function AdminPricing() {
         }
       }
 
+      // Save blocked dates
+      for (const roomId of Object.keys(editedBlocked)) {
+        for (const dateStr of Object.keys(editedBlocked[roomId])) {
+          const shouldBeBlocked = editedBlocked[roomId][dateStr];
+          const existingBlock = blockedDates.find(
+            b => b.room_id === roomId && b.blocked_date === dateStr
+          );
+
+          if (shouldBeBlocked && !existingBlock) {
+            await supabase.from('ical_blocked_dates').insert([
+              { room_id: roomId, blocked_date: dateStr, source: 'manual' }
+            ]);
+          } else if (!shouldBeBlocked && existingBlock) {
+            await supabase.from('ical_blocked_dates').delete().eq('id', existingBlock.id);
+          }
+        }
+      }
+
       toast.success('Árak mentve');
       setEditedPrices({});
+      setEditedBlocked({});
       fetchData();
     } catch (error) {
       toast.error('Hiba a mentéskor');
@@ -216,7 +229,7 @@ export default function AdminPricing() {
     setSaving(false);
   };
 
-  const hasChanges = Object.keys(editedPrices).length > 0;
+  const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedBlocked).length > 0;
 
   return (
     <AdminLayout>
@@ -224,7 +237,7 @@ export default function AdminPricing() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl lg:text-3xl font-semibold">Árazás</h1>
-            <p className="text-muted-foreground mt-1">Szezonális árak és minimum éjszakák beállítása</p>
+            <p className="text-muted-foreground mt-1">Szezonális árak és foglalhatóság beállítása</p>
           </div>
           {hasChanges && (
             <Button onClick={savePricing} disabled={saving}>
@@ -241,111 +254,52 @@ export default function AdminPricing() {
         <Card>
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (viewMode === 'week' || viewMode === 'two-weeks') {
-                      setCurrentMonth(addWeeks(currentMonth, viewMode === 'week' ? -1 : -2));
-                    } else {
-                      setCurrentMonth(subMonths(currentMonth, 1));
-                    }
-                  }}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <CardTitle className="font-display">
-                  {viewMode === 'custom' && customStartDate && customEndDate
-                    ? `${format(customStartDate, 'yyyy.MM.dd')} - ${format(customEndDate, 'yyyy.MM.dd')}`
-                    : format(currentMonth, 'yyyy MMMM', { locale: hu })}
-                </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (viewMode === 'week' || viewMode === 'two-weeks') {
-                      setCurrentMonth(addWeeks(currentMonth, viewMode === 'week' ? 1 : 2));
-                    } else {
-                      setCurrentMonth(addMonths(currentMonth, 1));
-                    }
-                  }}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              
-              <div className="flex flex-wrap items-center gap-3">
-                <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Időszak" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="week">1 hét</SelectItem>
-                    <SelectItem value="two-weeks">2 hét</SelectItem>
-                    <SelectItem value="month">1 hónap</SelectItem>
-                    <SelectItem value="custom">Egyéni</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                {viewMode === 'custom' && (
-                  <div className="flex items-center gap-2">
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-[140px] justify-start text-left font-normal",
-                            !customStartDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {customStartDate ? format(customStartDate, "MM.dd") : "Kezdet"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={customStartDate}
-                          onSelect={setCustomStartDate}
-                          initialFocus
-                          className="pointer-events-auto"
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <span className="text-muted-foreground">-</span>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-[140px] justify-start text-left font-normal",
-                            !customEndDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {customEndDate ? format(customEndDate, "MM.dd") : "Vég"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={customEndDate}
-                          onSelect={setCustomEndDate}
-                          initialFocus
-                          className="pointer-events-auto"
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-[280px] justify-start text-left font-normal",
+                        !dateRange.from && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateRange.from ? (
+                        dateRange.to ? (
+                          <>
+                            {format(dateRange.from, "yyyy.MM.dd", { locale: hu })} —{" "}
+                            {format(dateRange.to, "yyyy.MM.dd", { locale: hu })}
+                          </>
+                        ) : (
+                          format(dateRange.from, "yyyy.MM.dd", { locale: hu })
+                        )
+                      ) : (
+                        <span>Válasszon időszakot</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="range"
+                      defaultMonth={dateRange.from}
+                      selected={dateRange}
+                      onSelect={(range) => {
+                        if (range) setDateRange(range);
+                      }}
+                      numberOfMonths={2}
+                      locale={hu}
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
                 
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setCurrentMonth(new Date())}
+                  onClick={() => setDateRange({ from: new Date(), to: addMonths(new Date(), 1) })}
                 >
-                  Ma
+                  Ma + 1 hónap
                 </Button>
               </div>
             </div>
@@ -365,13 +319,13 @@ export default function AdminPricing() {
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="text-left p-2 sticky left-0 bg-card z-10 min-w-[200px]">
+                        <th className="text-left p-2 sticky left-0 bg-card z-10 min-w-[160px]">
                           Szoba
                         </th>
                         {days.map((day) => (
-                          <th key={day.toISOString()} className="p-2 text-center min-w-[80px]">
-                            <div className="font-medium">{format(day, 'd')}</div>
-                            <div className="text-xs text-muted-foreground font-normal">
+                          <th key={day.toISOString()} className="p-1 text-center min-w-[56px]">
+                            <div className="font-medium text-xs">{format(day, 'd')}</div>
+                            <div className="text-[10px] text-muted-foreground font-normal">
                               {format(day, 'EEE', { locale: hu })}
                             </div>
                           </th>
@@ -382,23 +336,9 @@ export default function AdminPricing() {
                       {rooms.map((room) => (
                         <tr key={room.id} className={cn("border-b", !room.is_active && "opacity-50")}>
                           <td className="p-2 sticky left-0 bg-card z-10">
-                            <div className="flex items-start gap-3">
-                              <div className="pt-0.5">
-                                <Checkbox
-                                  checked={room.is_active}
-                                  onCheckedChange={() => toggleRoomActive(room.id, room.is_active)}
-                                  title={room.is_active ? "Foglalható" : "Nem foglalható"}
-                                />
-                              </div>
-                              <div>
-                                <div className="font-medium">{room.name}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  Alap: {room.base_price.toLocaleString()} Ft
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {room.is_active ? "Foglalható" : "Nem foglalható"}
-                                </div>
-                              </div>
+                            <div className="font-medium text-sm">{room.name}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              Alap: {room.base_price.toLocaleString()} Ft
                             </div>
                           </td>
                           {days.map((day) => {
@@ -407,14 +347,19 @@ export default function AdminPricing() {
                             const edited = editedPrices[room.id]?.[dateStr];
                             const displayPrice = edited?.price || (pricing.price?.toString() ?? '');
                             const displayMinNights = edited?.minNights || (pricing.min_nights?.toString() ?? '');
-                            const isEdited = !!edited;
+                            const isEdited = !!edited || editedBlocked[room.id]?.[dateStr] !== undefined;
+                            const blocked = isDateBlocked(room.id, dateStr);
 
                             return (
                               <td
                                 key={dateStr}
-                                className={`p-1 ${isEdited ? 'bg-accent/20' : ''}`}
+                                className={cn(
+                                  "p-0.5 align-top",
+                                  isEdited && "bg-accent/20",
+                                  blocked && "bg-destructive/10"
+                                )}
                               >
-                                <div className="space-y-1">
+                                <div className="space-y-0.5">
                                   <Input
                                     type="number"
                                     placeholder="Ár"
@@ -422,7 +367,7 @@ export default function AdminPricing() {
                                     onChange={(e) =>
                                       handlePriceChange(room.id, dateStr, 'price', e.target.value)
                                     }
-                                    className="h-7 text-xs text-center"
+                                    className="h-6 text-[11px] text-center px-1 w-[52px]"
                                   />
                                   <Input
                                     type="number"
@@ -432,8 +377,16 @@ export default function AdminPricing() {
                                     onChange={(e) =>
                                       handlePriceChange(room.id, dateStr, 'minNights', e.target.value)
                                     }
-                                    className="h-7 text-xs text-center"
+                                    className="h-6 text-[11px] text-center px-1 w-[52px]"
                                   />
+                                  <div className="flex items-center justify-center pt-0.5">
+                                    <Checkbox
+                                      checked={!blocked}
+                                      onCheckedChange={() => toggleDateBlocked(room.id, dateStr)}
+                                      className="h-3.5 w-3.5"
+                                      title={blocked ? "Nem foglalható" : "Foglalható"}
+                                    />
+                                  </div>
                                 </div>
                               </td>
                             );
@@ -451,13 +404,14 @@ export default function AdminPricing() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="font-display text-lg">Tipp</CardTitle>
+            <CardTitle className="font-display text-lg">Jelmagyarázat</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Az első mezőbe az adott napi árat, a másodikba a minimum foglalható éjszakák számát írja be.
-              Ha üresen hagyja, az alapár és minimum éjszakák számát használja a rendszer.
-            </p>
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>• <strong>Ár:</strong> az adott napi ár Ft-ban</p>
+              <p>• <strong>Min:</strong> minimum foglalható éjszakák száma</p>
+              <p>• <strong>Checkbox:</strong> ha be van pipálva, a nap foglalható; ha nincs, akkor letiltott</p>
+            </div>
           </CardContent>
         </Card>
       </div>
