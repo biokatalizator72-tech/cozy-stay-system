@@ -4,17 +4,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
-import { ChevronLeft, ChevronRight, Loader2, Save } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Save, CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns';
+import { format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { hu } from 'date-fns/locale';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
 
 interface Room {
   id: string;
   name: string;
   base_price: number;
   min_nights: number;
+  is_active: boolean;
 }
 
 interface PricingRule {
@@ -32,6 +38,8 @@ interface DayPricing {
   ruleId: string | null;
 }
 
+type ViewMode = 'week' | 'two-weeks' | 'month' | 'custom';
+
 export default function AdminPricing() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
@@ -39,10 +47,41 @@ export default function AdminPricing() {
   const [saving, setSaving] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
 
+  const getDateRange = () => {
+    const today = new Date();
+    switch (viewMode) {
+      case 'week':
+        return {
+          start: startOfWeek(currentMonth, { weekStartsOn: 1 }),
+          end: endOfWeek(currentMonth, { weekStartsOn: 1 }),
+        };
+      case 'two-weeks':
+        return {
+          start: startOfWeek(currentMonth, { weekStartsOn: 1 }),
+          end: endOfWeek(addWeeks(currentMonth, 1), { weekStartsOn: 1 }),
+        };
+      case 'custom':
+        return {
+          start: customStartDate || startOfMonth(currentMonth),
+          end: customEndDate || endOfMonth(currentMonth),
+        };
+      case 'month':
+      default:
+        return {
+          start: startOfMonth(currentMonth),
+          end: endOfMonth(currentMonth),
+        };
+    }
+  };
+
+  const dateRange = getDateRange();
   const days = eachDayOfInterval({
-    start: startOfMonth(currentMonth),
-    end: endOfMonth(currentMonth),
+    start: dateRange.start,
+    end: dateRange.end,
   });
 
   const fetchData = async () => {
@@ -50,12 +89,11 @@ export default function AdminPricing() {
     
     const { data: roomsData } = await supabase
       .from('rooms')
-      .select('id, name, base_price, min_nights')
-      .eq('is_active', true)
+      .select('id, name, base_price, min_nights, is_active')
       .order('sort_order');
 
-    const startDate = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
-    const endDate = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
+    const startDate = format(dateRange.start, 'yyyy-MM-dd');
+    const endDate = format(dateRange.end, 'yyyy-MM-dd');
 
     const { data: rulesData } = await supabase
       .from('pricing_rules')
@@ -70,7 +108,21 @@ export default function AdminPricing() {
 
   useEffect(() => {
     fetchData();
-  }, [currentMonth]);
+  }, [currentMonth, viewMode, customStartDate, customEndDate]);
+
+  const toggleRoomActive = async (roomId: string, isActive: boolean) => {
+    const { error } = await supabase
+      .from('rooms')
+      .update({ is_active: !isActive })
+      .eq('id', roomId);
+    
+    if (error) {
+      toast.error('Hiba a státusz módosításakor');
+    } else {
+      toast.success(isActive ? 'Szoba letiltva' : 'Szoba engedélyezve');
+      setRooms(rooms.map(r => r.id === roomId ? { ...r, is_active: !isActive } : r));
+    }
+  };
 
   const getPricingForDay = (roomId: string, date: Date): DayPricing => {
     const dateStr = format(date, 'yyyy-MM-dd');
@@ -188,24 +240,114 @@ export default function AdminPricing() {
 
         <Card>
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <CardTitle className="font-display">
-                {format(currentMonth, 'yyyy MMMM', { locale: hu })}
-              </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (viewMode === 'week' || viewMode === 'two-weeks') {
+                      setCurrentMonth(addWeeks(currentMonth, viewMode === 'week' ? -1 : -2));
+                    } else {
+                      setCurrentMonth(subMonths(currentMonth, 1));
+                    }
+                  }}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <CardTitle className="font-display">
+                  {viewMode === 'custom' && customStartDate && customEndDate
+                    ? `${format(customStartDate, 'yyyy.MM.dd')} - ${format(customEndDate, 'yyyy.MM.dd')}`
+                    : format(currentMonth, 'yyyy MMMM', { locale: hu })}
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (viewMode === 'week' || viewMode === 'two-weeks') {
+                      setCurrentMonth(addWeeks(currentMonth, viewMode === 'week' ? 1 : 2));
+                    } else {
+                      setCurrentMonth(addMonths(currentMonth, 1));
+                    }
+                  }}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Időszak" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="week">1 hét</SelectItem>
+                    <SelectItem value="two-weeks">2 hét</SelectItem>
+                    <SelectItem value="month">1 hónap</SelectItem>
+                    <SelectItem value="custom">Egyéni</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {viewMode === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-[140px] justify-start text-left font-normal",
+                            !customStartDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {customStartDate ? format(customStartDate, "MM.dd") : "Kezdet"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={customStartDate}
+                          onSelect={setCustomStartDate}
+                          initialFocus
+                          className="pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <span className="text-muted-foreground">-</span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-[140px] justify-start text-left font-normal",
+                            !customEndDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {customEndDate ? format(customEndDate, "MM.dd") : "Vég"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={customEndDate}
+                          onSelect={setCustomEndDate}
+                          initialFocus
+                          className="pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCurrentMonth(new Date())}
+                >
+                  Ma
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -223,7 +365,7 @@ export default function AdminPricing() {
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="text-left p-2 sticky left-0 bg-card z-10 min-w-[150px]">
+                        <th className="text-left p-2 sticky left-0 bg-card z-10 min-w-[200px]">
                           Szoba
                         </th>
                         {days.map((day) => (
@@ -238,11 +380,25 @@ export default function AdminPricing() {
                     </thead>
                     <tbody>
                       {rooms.map((room) => (
-                        <tr key={room.id} className="border-b">
+                        <tr key={room.id} className={cn("border-b", !room.is_active && "opacity-50")}>
                           <td className="p-2 sticky left-0 bg-card z-10">
-                            <div className="font-medium">{room.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              Alap: {room.base_price.toLocaleString()} Ft
+                            <div className="flex items-start gap-3">
+                              <div className="pt-0.5">
+                                <Checkbox
+                                  checked={room.is_active}
+                                  onCheckedChange={() => toggleRoomActive(room.id, room.is_active)}
+                                  title={room.is_active ? "Foglalható" : "Nem foglalható"}
+                                />
+                              </div>
+                              <div>
+                                <div className="font-medium">{room.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  Alap: {room.base_price.toLocaleString()} Ft
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {room.is_active ? "Foglalható" : "Nem foglalható"}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           {days.map((day) => {
