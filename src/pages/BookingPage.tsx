@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,6 +52,7 @@ type DateRange = {
 export default function BookingPage() {
   const { roomId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [room, setRoom] = useState<Room | null>(null);
   const [images, setImages] = useState<RoomImage[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
@@ -61,7 +62,21 @@ export default function BookingPage() {
   const [success, setSuccess] = useState(false);
   const [currentImage, setCurrentImage] = useState(0);
 
-  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  // Parse query params for pre-filled dates
+  const checkInParam = searchParams.get('checkIn');
+  const checkOutParam = searchParams.get('checkOut');
+  const guestsParam = searchParams.get('guests');
+
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    if (checkInParam && checkOutParam) {
+      return {
+        from: parseISO(checkInParam),
+        to: parseISO(checkOutParam),
+      };
+    }
+    return undefined;
+  });
+  
   const [formData, setFormData] = useState({
     guest_name: '',
     guest_email: '',
