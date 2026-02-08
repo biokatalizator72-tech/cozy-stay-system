@@ -4,7 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { RoomCard } from '@/components/guest/RoomCard';
 import { PropertyHero } from '@/components/guest/PropertyHero';
-import { MapPin, Phone, Mail, ArrowRight } from 'lucide-react';
+import { SearchForm } from '@/components/guest/SearchForm';
+import { MapPin, Phone, Mail, Loader2 } from 'lucide-react';
+import { format, eachDayOfInterval, addDays, parseISO } from 'date-fns';
 
 interface PropertySettings {
   id: string;
@@ -25,6 +27,7 @@ interface Room {
   base_price: number;
   min_nights: number;
   amenities: string[];
+  sort_order: number;
 }
 
 interface RoomImage {
@@ -40,12 +43,24 @@ interface PropertyImage {
   sort_order: number;
 }
 
+interface SearchParams {
+  checkIn: Date;
+  checkOut: Date;
+  guests: number;
+}
+
 export default function Index() {
   const [property, setProperty] = useState<PropertySettings | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomImages, setRoomImages] = useState<Record<string, RoomImage[]>>({});
   const [propertyImages, setPropertyImages] = useState<PropertyImage[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Search state
+  const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
+  const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [maxCapacity, setMaxCapacity] = useState(10);
 
   useEffect(() => {
     async function fetchData() {
@@ -85,6 +100,12 @@ export default function Index() {
       }));
       setRooms(transformedRooms);
 
+      // Calculate max capacity from rooms
+      if (transformedRooms.length > 0) {
+        const max = Math.max(...transformedRooms.map(r => r.capacity));
+        setMaxCapacity(max);
+      }
+
       const imagesByRoom: Record<string, RoomImage[]> = {};
       roomImagesData?.forEach((img) => {
         if (!imagesByRoom[img.room_id]) {
@@ -99,6 +120,81 @@ export default function Index() {
 
     fetchData();
   }, []);
+
+  const handleSearch = async (checkIn: Date, checkOut: Date, guests: number) => {
+    setIsSearching(true);
+    setSearchParams({ checkIn, checkOut, guests });
+
+    const checkInStr = format(checkIn, 'yyyy-MM-dd');
+    const checkOutStr = format(checkOut, 'yyyy-MM-dd');
+
+    // Get all dates in the range (excluding checkout day)
+    const stayDates = eachDayOfInterval({
+      start: checkIn,
+      end: addDays(checkOut, -1),
+    }).map(d => format(d, 'yyyy-MM-dd'));
+
+    // Fetch bookings that overlap with the selected dates
+    const { data: bookingsData } = await supabase
+      .from('bookings')
+      .select('room_id, check_in, check_out')
+      .in('status', ['pending', 'confirmed'])
+      .lte('check_in', checkOutStr)
+      .gte('check_out', checkInStr);
+
+    // Fetch blocked dates
+    const { data: blockedData } = await supabase
+      .from('ical_blocked_dates')
+      .select('room_id, blocked_date')
+      .gte('blocked_date', checkInStr)
+      .lte('blocked_date', checkOutStr);
+
+    // Find rooms with bookings in the selected period
+    const bookedRoomIds = new Set<string>();
+    
+    bookingsData?.forEach((booking) => {
+      if (booking.room_id) {
+        const bookingStart = parseISO(booking.check_in);
+        const bookingEnd = parseISO(booking.check_out);
+        
+        // Check if any stay date overlaps with this booking
+        const hasOverlap = stayDates.some((dateStr) => {
+          const date = parseISO(dateStr);
+          return date >= bookingStart && date < bookingEnd;
+        });
+        
+        if (hasOverlap) {
+          bookedRoomIds.add(booking.room_id);
+        }
+      }
+    });
+
+    // Find rooms with blocked dates
+    blockedData?.forEach((blocked) => {
+      if (stayDates.includes(blocked.blocked_date)) {
+        bookedRoomIds.add(blocked.room_id);
+      }
+    });
+
+    // Filter rooms: capacity >= guests AND not booked
+    const filtered = rooms.filter(
+      (room) => room.capacity >= guests && !bookedRoomIds.has(room.id)
+    );
+
+    // Sort: exact capacity match first, then by capacity difference, then by sort_order
+    const sorted = [...filtered].sort((a, b) => {
+      const diffA = Math.abs(a.capacity - guests);
+      const diffB = Math.abs(b.capacity - guests);
+      
+      if (diffA !== diffB) {
+        return diffA - diffB;
+      }
+      return a.sort_order - b.sort_order;
+    });
+
+    setAvailableRooms(sorted);
+    setIsSearching(false);
+  };
 
   if (loading) {
     return (
@@ -117,36 +213,59 @@ export default function Index() {
         images={propertyImages}
       />
 
-      {/* Rooms Section */}
-      <section className="py-16 lg:py-24">
+      {/* Search Form Section */}
+      <section className="py-8 lg:py-12">
         <div className="container">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-3xl lg:text-4xl font-semibold mb-4">
-              Szobáink
-            </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Fedezze fel kényelmes szobáinkat és válasszon az igényeinek megfelelőt
-            </p>
+          <div className="max-w-4xl mx-auto -mt-16 relative z-10">
+            <SearchForm
+              maxCapacity={maxCapacity}
+              onSearch={handleSearch}
+              isSearching={isSearching}
+            />
           </div>
-
-          {rooms.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              Hamarosan érkeznek a szobáink!
-            </div>
-          ) : (
-            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-              {rooms.map((room, index) => (
-                <RoomCard
-                  key={room.id}
-                  room={room}
-                  images={roomImages[room.id] || []}
-                  index={index}
-                />
-              ))}
-            </div>
-          )}
         </div>
       </section>
+
+      {/* Rooms Section - only show after search */}
+      {searchParams && (
+        <section className="py-8 lg:py-16">
+          <div className="container">
+            <div className="text-center mb-8">
+              <h2 className="font-display text-3xl lg:text-4xl font-semibold mb-4">
+                Elérhető szobák
+              </h2>
+              <p className="text-muted-foreground">
+                {format(searchParams.checkIn, 'yyyy. MMMM d.')} - {format(searchParams.checkOut, 'yyyy. MMMM d.')} • {searchParams.guests} vendég
+              </p>
+            </div>
+
+            {isSearching ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : availableRooms.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-lg mb-2">Sajnos nincs szabad szoba a megadott feltételekkel.</p>
+                <p>Próbáljon más dátumot vagy kevesebb vendéget.</p>
+              </div>
+            ) : (
+              <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                {availableRooms.map((room, index) => (
+                  <RoomCard
+                    key={room.id}
+                    room={room}
+                    images={roomImages[room.id] || []}
+                    index={index}
+                    checkIn={searchParams.checkIn}
+                    checkOut={searchParams.checkOut}
+                    guests={searchParams.guests}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Contact Section */}
       {(property?.address || property?.phone || property?.email) && (

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Users, ChevronLeft, ChevronRight, Bed, ArrowRight } from 'lucide-react';
 import { formatPrice } from '@/lib/supabase-helpers';
+import { format } from 'date-fns';
 
 interface Room {
   id: string;
@@ -26,9 +27,12 @@ interface RoomCardProps {
   room: Room;
   images: RoomImage[];
   index: number;
+  checkIn?: Date;
+  checkOut?: Date;
+  guests?: number;
 }
 
-export function RoomCard({ room, images, index }: RoomCardProps) {
+export function RoomCard({ room, images, index, checkIn, checkOut, guests }: RoomCardProps) {
   const [currentImage, setCurrentImage] = useState(0);
   const hasImages = images.length > 0;
 
@@ -42,6 +46,29 @@ export function RoomCard({ room, images, index }: RoomCardProps) {
     e.preventDefault();
     e.stopPropagation();
     setCurrentImage((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  // Build booking URL with optional query params
+  const buildBookingUrl = () => {
+    let url = `/book/${room.id}`;
+    const params = new URLSearchParams();
+    
+    if (checkIn) {
+      params.set('checkIn', format(checkIn, 'yyyy-MM-dd'));
+    }
+    if (checkOut) {
+      params.set('checkOut', format(checkOut, 'yyyy-MM-dd'));
+    }
+    if (guests) {
+      params.set('guests', guests.toString());
+    }
+    
+    const queryString = params.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+    
+    return url;
   };
 
   return (
@@ -136,7 +163,7 @@ export function RoomCard({ room, images, index }: RoomCardProps) {
             </div>
             <div className="text-xs text-muted-foreground">/ éjszaka</div>
           </div>
-          <Link to={`/book/${room.id}`}>
+          <Link to={buildBookingUrl()}>
             <Button className="group/btn">
               Foglalás
               <ArrowRight className="ml-2 h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
