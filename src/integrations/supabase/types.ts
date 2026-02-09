@@ -97,6 +97,33 @@ export type Database = {
           },
         ]
       }
+      child_age_brackets: {
+        Row: {
+          created_at: string
+          discount_percent: number
+          from_age: number
+          id: string
+          sort_order: number
+          to_age: number
+        }
+        Insert: {
+          created_at?: string
+          discount_percent?: number
+          from_age?: number
+          id?: string
+          sort_order?: number
+          to_age?: number
+        }
+        Update: {
+          created_at?: string
+          discount_percent?: number
+          from_age?: number
+          id?: string
+          sort_order?: number
+          to_age?: number
+        }
+        Relationships: []
+      }
       ical_blocked_dates: {
         Row: {
           blocked_date: string
