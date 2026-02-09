@@ -269,7 +269,7 @@ export default function BookingPage() {
             room_name: roomType.name,
             check_in: format(dateRange.from, 'yyyy. MMMM d.', { locale: hu }),
             check_out: format(dateRange.to, 'yyyy. MMMM d.', { locale: hu }),
-            total_price: total.toLocaleString('hu-HU'),
+            total_price: total,
           },
         });
       } catch (emailError) {
