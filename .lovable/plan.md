@@ -1,49 +1,36 @@
 
 
-# A {deposit} hiba javitasa - hianyzo nullak
+# A {total_price} es {deposit} hiba vegleges javitasa
 
-## A problema oka
+## A problema gyokere
 
-A `total_price` ertek a foglalasi oldalrol mar **formatazva** erkezik az edge function-be: `72 000` (szokozzel elvalasztva, magyar szamformat). A `parseFloat("72 000")` viszont csak a szokoz elotti reszt olvassa be, tehat `72`-t kap. Igy `72 * 50 / 100 = 36` lesz az eloleg.
+Az edge function szerver oldalon azonnal frissult, de a bongeszoben futo frontend (BookingPage) meg a regi kodot hasznalta, ami formatazott stringet kuldott ("54 000"). Az uj edge function `parseFloat("54 000")` = 54, igy mindket ertek hibas lett.
 
 ## Megoldas
 
-Ket helyen kell javitani:
+Az edge function-ben a `total_price` erteketol szurijuk ki a nem szam karaktereket (szokoz, stb.) mielott `parseFloat`-ot hivunk. Igy mindket formatum mukodik: nyers szam (54000) es formatazott string ("54 000").
 
-### 1. `src/pages/BookingPage.tsx` (272. sor)
-
-A `total_price`-t nyers szamkent kuldjuk, ne formatazva:
+### `supabase/functions/send-booking-confirmation/index.ts` (39. sor)
 
 **Jelenleg:**
 ```typescript
-total_price: total.toLocaleString('hu-HU'),
+const totalPriceNum = parseFloat(total_price) || 0;
 ```
 
 **Javitva:**
 ```typescript
-total_price: total,
+const rawPrice = String(total_price).replace(/[^\d.,]/g, '').replace(',', '.');
+const totalPriceNum = parseFloat(rawPrice) || 0;
 ```
 
-### 2. `supabase/functions/send-booking-confirmation/index.ts` (52. sor)
+Ez a sor minden nem szam karaktert (szokoz, specialis szokoz, stb.) eltavolit, majd a magyar tizedes vesszot pontra csereli. Igy:
+- `"54 000"` -> `"54000"` -> `54000`
+- `54000` -> `"54000"` -> `54000`
+- `"72 000"` -> `"72000"` -> `72000`
 
-A `{total_price}` placeholder-t formatazva jelenitjuk meg az emailben (hogy szepen nezzen ki ezres elvalasztoval):
-
-**Jelenleg:**
-```typescript
-.replace(/{total_price}/g, total_price || "")
-```
-
-**Javitva:**
-```typescript
-.replace(/{total_price}/g, totalPriceNum.toLocaleString("hu-HU"))
-```
-
-Igy a szamitas helyes lesz (`72000 * 50 / 100 = 36000`), es az emailben is szepen formatazva jelenik meg mind a vegosszeg (`72 000`), mind az eloleg (`36 000`).
-
-## Erintett fajlok
+## Erintett fajl
 
 | Fajl | Valtozas |
 |------|----------|
-| `src/pages/BookingPage.tsx` | `total_price`-t nyers szamkent kuldi |
-| `supabase/functions/send-booking-confirmation/index.ts` | `{total_price}` megjelenitest formatazza |
+| `supabase/functions/send-booking-confirmation/index.ts` | Robusztus szam-parszolas a `total_price` feldolgozasanal |
 
