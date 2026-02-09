@@ -62,6 +62,7 @@ export default function BookingPage() {
   const [images, setImages] = useState<RoomTypeImage[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
+  const [nightDiscounts, setNightDiscounts] = useState<{ min_nights: number; discount_percent: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -130,6 +131,12 @@ export default function BookingPage() {
         .select('*')
         .order('sort_order');
 
+      // Fetch night discounts
+      const { data: nightDiscountsData } = await supabase
+        .from('night_discounts')
+        .select('min_nights, discount_percent')
+        .order('min_nights');
+
       const transformed: RoomType = {
         ...roomTypeData,
         amenities: Array.isArray(roomTypeData.amenities)
@@ -141,6 +148,7 @@ export default function BookingPage() {
       setImages(imagesData || []);
       setPricingRules(rulesData || []);
       setChildAgeBrackets(bracketsData || []);
+      setNightDiscounts(nightDiscountsData || []);
       setLoading(false);
     }
 
@@ -158,11 +166,11 @@ export default function BookingPage() {
     return rule?.price_per_night || roomType.base_price;
   };
 
-  const calculateTotal = (): { nights: number; total: number } => {
-    if (!dateRange?.from || !dateRange?.to) return { nights: 0, total: 0 };
+  const calculateTotal = (): { nights: number; total: number; originalTotal: number; discountPercent: number } => {
+    if (!dateRange?.from || !dateRange?.to) return { nights: 0, total: 0, originalTotal: 0, discountPercent: 0 };
 
     const nightCount = differenceInDays(dateRange.to, dateRange.from);
-    if (nightCount <= 0) return { nights: 0, total: 0 };
+    if (nightCount <= 0) return { nights: 0, total: 0, originalTotal: 0, discountPercent: 0 };
 
     let total = 0;
     const days = eachDayOfInterval({
@@ -172,9 +180,7 @@ export default function BookingPage() {
 
     days.forEach((day) => {
       const nightlyRate = getPriceForDate(day);
-      // Base room price (covers base occupancy)
       total += nightlyRate;
-      // Children: free slots fill base_capacity first, extras pay discounted per-person rate
       const freeChildSlots = Math.max(0, (roomType?.base_capacity ?? 2) - adults);
       let remainingFreeSlots = freeChildSlots;
       children.forEach(child => {
@@ -184,14 +190,24 @@ export default function BookingPage() {
         remainingFreeSlots -= absorbed;
         if (paidCount > 0) {
           const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
-          const discountPercent = bracket?.discount_percent ?? 0;
+          const dp = bracket?.discount_percent ?? 0;
           const perPersonRate = nightlyRate / (roomType?.base_capacity ?? 2);
-          total += perPersonRate * (1 - discountPercent / 100) * paidCount;
+          total += perPersonRate * (1 - dp / 100) * paidCount;
         }
       });
     });
 
-    return { nights: nightCount, total };
+    const originalTotal = total;
+
+    // Apply night discount
+    const applicableDiscount = nightDiscounts
+      .filter(d => nightCount >= d.min_nights)
+      .sort((a, b) => b.min_nights - a.min_nights)[0];
+
+    const ndPercent = applicableDiscount?.discount_percent ?? 0;
+    const discountedTotal = ndPercent > 0 ? Math.round(total * (1 - ndPercent / 100)) : total;
+
+    return { nights: nightCount, total: discountedTotal, originalTotal, discountPercent: ndPercent };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -276,7 +292,7 @@ export default function BookingPage() {
     );
   }
 
-  const { nights, total } = calculateTotal();
+  const { nights, total, originalTotal, discountPercent } = calculateTotal();
 
   return (
     <div className="min-h-screen bg-background">
@@ -420,11 +436,23 @@ export default function BookingPage() {
                           {format(dateRange.to, 'yyyy. MMMM d.', { locale: hu })}
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between items-end text-sm">
                         <span>{nights} éjszaka</span>
-                        <span className="font-bold text-primary text-lg">
-                          {formatPrice(total)}
-                        </span>
+                        <div className="text-right">
+                          {discountPercent > 0 && (
+                            <>
+                              <Badge className="bg-accent text-accent-foreground text-xs font-semibold mb-1">
+                                -{discountPercent}%
+                              </Badge>
+                              <div className="text-sm text-muted-foreground line-through">
+                                {formatPrice(originalTotal)}
+                              </div>
+                            </>
+                          )}
+                          <span className="font-bold text-primary text-lg">
+                            {formatPrice(total)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}

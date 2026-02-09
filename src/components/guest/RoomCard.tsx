@@ -36,10 +36,12 @@ interface RoomCardProps {
   adults?: number;
   children?: ChildCount[];
   totalPrice?: number;
+  originalPrice?: number;
+  discountPercent?: number;
   nights?: number;
 }
 
-export function RoomCard({ room, images, index, checkIn, checkOut, adults, children, totalPrice, nights }: RoomCardProps) {
+export function RoomCard({ room, images, index, checkIn, checkOut, adults, children, totalPrice, originalPrice, discountPercent, nights }: RoomCardProps) {
   const [currentImage, setCurrentImage] = useState(0);
   const hasImages = images.length > 0;
 
@@ -168,9 +170,23 @@ export function RoomCard({ room, images, index, checkIn, checkOut, adults, child
 
         <div className="flex items-center justify-between pt-4 border-t">
           <div>
-            <div className="text-2xl font-bold text-primary">
-              {formatPrice(totalPrice ?? room.base_price)}
-            </div>
+            {discountPercent && discountPercent > 0 && originalPrice ? (
+              <>
+                <Badge className="bg-accent text-accent-foreground text-xs font-semibold mb-1">
+                  -{discountPercent}%
+                </Badge>
+                <div className="text-sm text-muted-foreground line-through">
+                  {formatPrice(originalPrice)}
+                </div>
+                <div className="text-2xl font-bold text-primary">
+                  {formatPrice(totalPrice ?? room.base_price)}
+                </div>
+              </>
+            ) : (
+              <div className="text-2xl font-bold text-primary">
+                {formatPrice(totalPrice ?? room.base_price)}
+              </div>
+            )}
             <div className="text-xs text-muted-foreground">
               {totalPrice != null && nights ? `${nights} éjszaka összesen` : '/ éjszaka'}
             </div>
