@@ -237,7 +237,16 @@ export default function Index() {
         const rule = pricingRules?.find(r =>
           r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
         );
-        total += rule ? Number(rule.price_per_night) : rt.base_price;
+        const nightlyRate = rule ? Number(rule.price_per_night) : rt.base_price;
+        // Adults pay full price
+        total += nightlyRate * guestCounts.adults;
+        // Children pay discounted price based on their age bracket
+        guestCounts.children.forEach(child => {
+          if (child.count <= 0) return;
+          const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
+          const discountPercent = bracket?.discount_percent ?? 0;
+          total += nightlyRate * (1 - discountPercent / 100) * child.count;
+        });
       });
       calculatedPrices[rt.id] = total;
     });
