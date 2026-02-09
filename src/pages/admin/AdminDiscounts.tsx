@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -27,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Trash2, Save } from 'lucide-react';
+import { Plus, Trash2, Save, Baby } from 'lucide-react';
 
 interface NightDiscount {
   id: string;
@@ -44,6 +45,14 @@ interface SpecialDiscount {
   sort_order: number;
 }
 
+interface ChildAgeBracket {
+  id: string;
+  from_age: number;
+  to_age: number;
+  discount_percent: number;
+  sort_order: number;
+}
+
 const PRESET_DISCOUNT_NAMES = [
   'Előfoglalási kedvezmény',
   'Törzsvendég kedvezmény',
@@ -54,12 +63,19 @@ const PRESET_DISCOUNT_NAMES = [
 
 const DISCOUNT_PERCENTAGES = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 
+const CHILD_DISCOUNT_PERCENTAGES = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+const AGE_OPTIONS = Array.from({ length: 100 }, (_, i) => i);
+
 export default function AdminDiscounts() {
   const { toast } = useToast();
   const [nightDiscounts, setNightDiscounts] = useState<NightDiscount[]>([]);
   const [specialDiscounts, setSpecialDiscounts] = useState<SpecialDiscount[]>([]);
+  const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
+  const [childPricingEnabled, setChildPricingEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingChildren, setSavingChildren] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newDiscountName, setNewDiscountName] = useState('');
   const [newDiscountCustomName, setNewDiscountCustomName] = useState('');
@@ -72,7 +88,7 @@ export default function AdminDiscounts() {
   const fetchDiscounts = async () => {
     setLoading(true);
     try {
-      const [nightRes, specialRes] = await Promise.all([
+      const [nightRes, specialRes, childRes] = await Promise.all([
         supabase
           .from('night_discounts')
           .select('*')
@@ -81,13 +97,20 @@ export default function AdminDiscounts() {
           .from('special_discounts')
           .select('*')
           .order('sort_order', { ascending: true }),
+        supabase
+          .from('child_age_brackets')
+          .select('*')
+          .order('sort_order', { ascending: true }),
       ]);
 
       if (nightRes.error) throw nightRes.error;
       if (specialRes.error) throw specialRes.error;
+      if (childRes.error) throw childRes.error;
 
       setNightDiscounts(nightRes.data || []);
       setSpecialDiscounts(specialRes.data || []);
+      setChildAgeBrackets(childRes.data || []);
+      setChildPricingEnabled((childRes.data || []).length > 0);
     } catch (error: any) {
       toast({
         title: 'Hiba',
@@ -96,6 +119,101 @@ export default function AdminDiscounts() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Child age brackets handlers
+  const addChildAgeBracket = () => {
+    const maxOrder = childAgeBrackets.length > 0
+      ? Math.max(...childAgeBrackets.map(d => d.sort_order))
+      : 0;
+    setChildAgeBrackets([
+      ...childAgeBrackets,
+      {
+        id: `temp-${Date.now()}`,
+        from_age: 0,
+        to_age: 2,
+        discount_percent: 100,
+        sort_order: maxOrder + 1,
+      },
+    ]);
+  };
+
+  const updateChildAgeBracket = (id: string, field: keyof ChildAgeBracket, value: number) => {
+    setChildAgeBrackets(childAgeBrackets.map(d =>
+      d.id === id ? { ...d, [field]: value } : d
+    ));
+  };
+
+  const removeChildAgeBracket = async (id: string) => {
+    if (id.startsWith('temp-')) {
+      setChildAgeBrackets(childAgeBrackets.filter(d => d.id !== id));
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('child_age_brackets')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setChildAgeBrackets(childAgeBrackets.filter(d => d.id !== id));
+      toast({ title: 'Korkategória törölve' });
+    } catch (error: any) {
+      toast({
+        title: 'Hiba',
+        description: 'Nem sikerült törölni a korkategóriát.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const saveChildAgeBrackets = async () => {
+    setSavingChildren(true);
+    try {
+      // Delete all and re-insert for simplicity
+      const existingIds = childAgeBrackets
+        .filter(b => !b.id.startsWith('temp-'))
+        .map(b => b.id);
+
+      // Update or insert each bracket
+      for (const bracket of childAgeBrackets) {
+        if (bracket.id.startsWith('temp-')) {
+          const { error } = await supabase
+            .from('child_age_brackets')
+            .insert({
+              from_age: bracket.from_age,
+              to_age: bracket.to_age,
+              discount_percent: bracket.discount_percent,
+              sort_order: bracket.sort_order,
+            });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('child_age_brackets')
+            .update({
+              from_age: bracket.from_age,
+              to_age: bracket.to_age,
+              discount_percent: bracket.discount_percent,
+              sort_order: bracket.sort_order,
+            })
+            .eq('id', bracket.id);
+          if (error) throw error;
+        }
+      }
+
+      toast({ title: 'Gyermekárazás mentve' });
+      fetchDiscounts();
+    } catch (error: any) {
+      toast({
+        title: 'Hiba',
+        description: 'Nem sikerült menteni a gyermekárazást.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingChildren(false);
     }
   };
 
@@ -280,6 +398,135 @@ export default function AdminDiscounts() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-display font-bold">Kedvezmények beállítása</h1>
+
+      {/* Child pricing section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Baby className="h-5 w-5 text-primary" />
+            <div>
+              <CardTitle className="text-lg">Gyermekárazás</CardTitle>
+              <CardDescription>Állítsa be a gyermek korcsoportokra vonatkozó kedvezményeket</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="child-pricing-enabled"
+                checked={childPricingEnabled}
+                onCheckedChange={setChildPricingEnabled}
+              />
+              <Label htmlFor="child-pricing-enabled" className="text-sm">
+                {childPricingEnabled ? 'Aktív' : 'Inaktív'}
+              </Label>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className={!childPricingEnabled ? 'opacity-50 pointer-events-none' : ''}>
+          {childAgeBrackets.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">
+              Még nincs gyermek korkategória beállítva. Kattintson az "Új korkategória" gombra.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Min. életkor</TableHead>
+                  <TableHead>Max. életkor</TableHead>
+                  <TableHead>Kedvezmény</TableHead>
+                  <TableHead className="w-[100px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {childAgeBrackets.map((bracket) => (
+                  <TableRow key={bracket.id}>
+                    <TableCell>
+                      <Select
+                        value={bracket.from_age.toString()}
+                        onValueChange={(value) =>
+                          updateChildAgeBracket(bracket.id, 'from_age', parseInt(value))
+                        }
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {AGE_OPTIONS.map((age) => (
+                            <SelectItem key={age} value={age.toString()}>
+                              {age} év
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={bracket.to_age.toString()}
+                        onValueChange={(value) =>
+                          updateChildAgeBracket(bracket.id, 'to_age', parseInt(value))
+                        }
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {AGE_OPTIONS.map((age) => (
+                            <SelectItem key={age} value={age.toString()}>
+                              {age} év
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={bracket.discount_percent.toString()}
+                        onValueChange={(value) =>
+                          updateChildAgeBracket(bracket.id, 'discount_percent', parseInt(value))
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CHILD_DISCOUNT_PERCENTAGES.map((p) => (
+                            <SelectItem key={p} value={p.toString()}>
+                              {p === 100 ? '100% (Ingyenes)' : `${p}%`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeChildAgeBracket(bracket.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <div className="flex justify-between items-center mt-4">
+            <Button variant="outline" size="sm" onClick={addChildAgeBracket}>
+              <Plus className="h-4 w-4 mr-1" />
+              Új korkategória
+            </Button>
+            <Button size="sm" onClick={saveChildAgeBrackets} disabled={savingChildren}>
+              <Save className="h-4 w-4 mr-1" />
+              Mentés
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mt-4">
+            A kedvezmény a felnőtt árból számolódik. Pl. 50% kedvezmény = a gyermek a felnőtt ár felét fizeti.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Night discounts section */}
       <Card>
