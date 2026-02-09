@@ -12,6 +12,7 @@ import {
   LogOut,
   Menu,
   X,
+  Percent,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,7 @@ const navigation = [
   { name: 'Áttekintés', href: '/admin', icon: Building2 },
   { name: 'Szobák', href: '/admin/rooms', icon: Bed },
   { name: 'Árazás', href: '/admin/pricing', icon: Calendar },
+  { name: 'Kedvezmények', href: '/admin/discounts', icon: Percent },
   { name: 'Foglalások', href: '/admin/bookings', icon: ClipboardList },
   { name: 'Beállítások', href: '/admin/settings', icon: Settings },
 ];
