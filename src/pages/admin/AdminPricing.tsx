@@ -9,22 +9,21 @@ import { toast } from 'sonner';
 import { format, eachDayOfInterval, addMonths } from 'date-fns';
 import { hu } from 'date-fns/locale';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
 
-interface Room {
+interface RoomType {
   id: string;
   name: string;
   base_price: number;
-  min_nights: number;
   is_active: boolean;
 }
 
 interface PricingRule {
   id: string;
+  room_type_id: string | null;
   room_id: string;
   start_date: string;
   end_date: string;
@@ -32,11 +31,11 @@ interface PricingRule {
   min_nights: number;
 }
 
-interface BlockedDate {
+interface RoomTypeAvailability {
   id: string;
-  room_id: string;
-  blocked_date: string;
-  source: string | null;
+  room_type_id: string;
+  date: string;
+  available_count: number;
 }
 
 interface DayPricing {
@@ -46,13 +45,13 @@ interface DayPricing {
 }
 
 export default function AdminPricing() {
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
-  const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
+  const [availability, setAvailability] = useState<RoomTypeAvailability[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
-  const [editedBlocked, setEditedBlocked] = useState<Record<string, Record<string, boolean>>>({});
+  const [editedAvailability, setEditedAvailability] = useState<Record<string, Record<string, string>>>({});
   
   const [dateRange, setDateRange] = useState<DateRange>({
     from: new Date(),
@@ -68,9 +67,9 @@ export default function AdminPricing() {
     
     setLoading(true);
     
-    const { data: roomsData } = await supabase
-      .from('rooms')
-      .select('id, name, base_price, min_nights, is_active')
+    const { data: roomTypesData } = await supabase
+      .from('room_types')
+      .select('id, name, base_price, is_active')
       .order('sort_order');
 
     const startDate = format(dateRange.from, 'yyyy-MM-dd');
@@ -82,15 +81,15 @@ export default function AdminPricing() {
       .gte('end_date', startDate)
       .lte('start_date', endDate);
 
-    const { data: blockedData } = await supabase
-      .from('ical_blocked_dates')
+    const { data: availabilityData } = await supabase
+      .from('room_type_availability')
       .select('*')
-      .gte('blocked_date', startDate)
-      .lte('blocked_date', endDate);
+      .gte('date', startDate)
+      .lte('date', endDate);
 
-    setRooms(roomsData || []);
+    setRoomTypes(roomTypesData || []);
     setPricingRules(rulesData || []);
-    setBlockedDates(blockedData || []);
+    setAvailability(availabilityData || []);
     setLoading(false);
   };
 
@@ -98,31 +97,31 @@ export default function AdminPricing() {
     fetchData();
   }, [dateRange]);
 
-  const isDateBlocked = (roomId: string, dateStr: string): boolean => {
+  const getAvailabilityCount = (roomTypeId: string, dateStr: string): number => {
     // Check edited state first
-    if (editedBlocked[roomId]?.[dateStr] !== undefined) {
-      return editedBlocked[roomId][dateStr];
+    if (editedAvailability[roomTypeId]?.[dateStr] !== undefined) {
+      return parseInt(editedAvailability[roomTypeId][dateStr]) || 0;
     }
     // Check database
-    return blockedDates.some(b => b.room_id === roomId && b.blocked_date === dateStr);
+    const avail = availability.find(a => a.room_type_id === roomTypeId && a.date === dateStr);
+    return avail?.available_count ?? 0;
   };
 
-  const toggleDateBlocked = (roomId: string, dateStr: string) => {
-    const currentlyBlocked = isDateBlocked(roomId, dateStr);
-    setEditedBlocked(prev => ({
+  const handleAvailabilityChange = (roomTypeId: string, dateStr: string, value: string) => {
+    setEditedAvailability(prev => ({
       ...prev,
-      [roomId]: {
-        ...prev[roomId],
-        [dateStr]: !currentlyBlocked,
+      [roomTypeId]: {
+        ...prev[roomTypeId],
+        [dateStr]: value,
       },
     }));
   };
 
-  const getPricingForDay = (roomId: string, date: Date): DayPricing => {
+  const getPricingForDay = (roomTypeId: string, date: Date): DayPricing => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const rule = pricingRules.find(
       (r) =>
-        r.room_id === roomId &&
+        r.room_type_id === roomTypeId &&
         r.start_date <= dateStr &&
         r.end_date >= dateStr
     );
@@ -135,22 +134,22 @@ export default function AdminPricing() {
       };
     }
 
-    const room = rooms.find((r) => r.id === roomId);
+    const roomType = roomTypes.find((r) => r.id === roomTypeId);
     return {
-      price: room?.base_price || null,
-      min_nights: room?.min_nights || null,
+      price: roomType?.base_price || null,
+      min_nights: 1,
       ruleId: null,
     };
   };
 
-  const handlePriceChange = (roomId: string, dateStr: string, field: 'price' | 'minNights', value: string) => {
+  const handlePriceChange = (roomTypeId: string, dateStr: string, field: 'price' | 'minNights', value: string) => {
     setEditedPrices((prev) => ({
       ...prev,
-      [roomId]: {
-        ...prev[roomId],
+      [roomTypeId]: {
+        ...prev[roomTypeId],
         [dateStr]: {
-          price: prev[roomId]?.[dateStr]?.price || '',
-          minNights: prev[roomId]?.[dateStr]?.minNights || '',
+          price: prev[roomTypeId]?.[dateStr]?.price || '',
+          minNights: prev[roomTypeId]?.[dateStr]?.minNights || '',
           [field]: value,
         },
       },
@@ -162,9 +161,9 @@ export default function AdminPricing() {
     
     try {
       // Save pricing rules
-      for (const roomId of Object.keys(editedPrices)) {
-        for (const dateStr of Object.keys(editedPrices[roomId])) {
-          const { price, minNights } = editedPrices[roomId][dateStr];
+      for (const roomTypeId of Object.keys(editedPrices)) {
+        for (const dateStr of Object.keys(editedPrices[roomTypeId])) {
+          const { price, minNights } = editedPrices[roomTypeId][dateStr];
           
           if (!price && !minNights) continue;
 
@@ -173,7 +172,7 @@ export default function AdminPricing() {
 
           const existingRule = pricingRules.find(
             (r) =>
-              r.room_id === roomId &&
+              r.room_type_id === roomTypeId &&
               r.start_date === dateStr &&
               r.end_date === dateStr
           );
@@ -189,7 +188,8 @@ export default function AdminPricing() {
           } else if (priceNum) {
             await supabase.from('pricing_rules').insert([
               {
-                room_id: roomId,
+                room_id: roomTypeId, // Keep for backward compatibility
+                room_type_id: roomTypeId,
                 start_date: dateStr,
                 end_date: dateStr,
                 price_per_night: priceNum,
@@ -200,27 +200,30 @@ export default function AdminPricing() {
         }
       }
 
-      // Save blocked dates
-      for (const roomId of Object.keys(editedBlocked)) {
-        for (const dateStr of Object.keys(editedBlocked[roomId])) {
-          const shouldBeBlocked = editedBlocked[roomId][dateStr];
-          const existingBlock = blockedDates.find(
-            b => b.room_id === roomId && b.blocked_date === dateStr
+      // Save availability
+      for (const roomTypeId of Object.keys(editedAvailability)) {
+        for (const dateStr of Object.keys(editedAvailability[roomTypeId])) {
+          const availableCount = parseInt(editedAvailability[roomTypeId][dateStr]) || 0;
+          const existingAvail = availability.find(
+            a => a.room_type_id === roomTypeId && a.date === dateStr
           );
 
-          if (shouldBeBlocked && !existingBlock) {
-            await supabase.from('ical_blocked_dates').insert([
-              { room_id: roomId, blocked_date: dateStr, source: 'manual' }
+          if (existingAvail) {
+            await supabase
+              .from('room_type_availability')
+              .update({ available_count: availableCount })
+              .eq('id', existingAvail.id);
+          } else {
+            await supabase.from('room_type_availability').insert([
+              { room_type_id: roomTypeId, date: dateStr, available_count: availableCount }
             ]);
-          } else if (!shouldBeBlocked && existingBlock) {
-            await supabase.from('ical_blocked_dates').delete().eq('id', existingBlock.id);
           }
         }
       }
 
-      toast.success('Árak mentve');
+      toast.success('Árak és elérhetőség mentve');
       setEditedPrices({});
-      setEditedBlocked({});
+      setEditedAvailability({});
       fetchData();
     } catch (error) {
       toast.error('Hiba a mentéskor');
@@ -229,7 +232,7 @@ export default function AdminPricing() {
     setSaving(false);
   };
 
-  const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedBlocked).length > 0;
+  const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedAvailability).length > 0;
 
   return (
     <AdminLayout>
@@ -237,7 +240,7 @@ export default function AdminPricing() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl lg:text-3xl font-semibold">Árazás</h1>
-            <p className="text-muted-foreground mt-1">Szezonális árak és foglalhatóság beállítása</p>
+            <p className="text-muted-foreground mt-1">Szobatípusonkénti árak és elérhetőség</p>
           </div>
           {hasChanges && (
             <Button onClick={savePricing} disabled={saving}>
@@ -309,9 +312,9 @@ export default function AdminPricing() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : rooms.length === 0 ? (
+            ) : roomTypes.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
-                Még nincsenek szobák. Hozzon létre szobákat az árazáshoz.
+                Még nincsenek szobatípusok. Hozzon létre szobatípusokat az árazáshoz.
               </p>
             ) : (
               <ScrollArea className="w-full">
@@ -320,7 +323,7 @@ export default function AdminPricing() {
                     <thead>
                       <tr className="border-b">
                         <th className="text-left p-2 sticky left-0 bg-card z-10 min-w-[160px]">
-                          Szoba
+                          Szobatípus
                         </th>
                         {days.map((day) => (
                           <th key={day.toISOString()} className="p-1 text-center min-w-[56px]">
@@ -333,22 +336,25 @@ export default function AdminPricing() {
                       </tr>
                     </thead>
                     <tbody>
-                      {rooms.map((room) => (
-                        <tr key={room.id} className={cn("border-b", !room.is_active && "opacity-50")}>
+                      {roomTypes.map((roomType) => (
+                        <tr key={roomType.id} className={cn("border-b", !roomType.is_active && "opacity-50")}>
                           <td className="p-2 sticky left-0 bg-card z-10">
-                            <div className="font-medium text-sm">{room.name}</div>
+                            <div className="font-medium text-sm">{roomType.name}</div>
                             <div className="text-[10px] text-muted-foreground">
-                              Alap: {room.base_price.toLocaleString()} Ft
+                              Alap: {roomType.base_price.toLocaleString()} Ft
                             </div>
                           </td>
                           {days.map((day) => {
                             const dateStr = format(day, 'yyyy-MM-dd');
-                            const pricing = getPricingForDay(room.id, day);
-                            const edited = editedPrices[room.id]?.[dateStr];
+                            const pricing = getPricingForDay(roomType.id, day);
+                            const edited = editedPrices[roomType.id]?.[dateStr];
                             const displayPrice = edited?.price || (pricing.price?.toString() ?? '');
                             const displayMinNights = edited?.minNights || (pricing.min_nights?.toString() ?? '');
-                            const isEdited = !!edited || editedBlocked[room.id]?.[dateStr] !== undefined;
-                            const blocked = isDateBlocked(room.id, dateStr);
+                            const availCount = getAvailabilityCount(roomType.id, dateStr);
+                            const editedAvail = editedAvailability[roomType.id]?.[dateStr];
+                            const displayAvail = editedAvail !== undefined ? editedAvail : availCount.toString();
+                            const isEdited = !!edited || editedAvail !== undefined;
+                            const isUnavailable = parseInt(displayAvail) === 0;
 
                             return (
                               <td
@@ -356,7 +362,7 @@ export default function AdminPricing() {
                                 className={cn(
                                   "p-0.5 align-top",
                                   isEdited && "bg-accent/20",
-                                  blocked && "bg-destructive/10"
+                                  isUnavailable && !isEdited && "bg-destructive/10"
                                 )}
                               >
                                 <div className="space-y-0.5">
@@ -365,7 +371,7 @@ export default function AdminPricing() {
                                     placeholder="Ár"
                                     value={displayPrice}
                                     onChange={(e) =>
-                                      handlePriceChange(room.id, dateStr, 'price', e.target.value)
+                                      handlePriceChange(roomType.id, dateStr, 'price', e.target.value)
                                     }
                                     className="h-6 text-[11px] text-center px-1 w-[52px]"
                                   />
@@ -375,18 +381,25 @@ export default function AdminPricing() {
                                     min={1}
                                     value={displayMinNights}
                                     onChange={(e) =>
-                                      handlePriceChange(room.id, dateStr, 'minNights', e.target.value)
+                                      handlePriceChange(roomType.id, dateStr, 'minNights', e.target.value)
                                     }
                                     className="h-6 text-[11px] text-center px-1 w-[52px]"
                                   />
-                                  <div className="flex items-center justify-center pt-0.5">
-                                    <Checkbox
-                                      checked={!blocked}
-                                      onCheckedChange={() => toggleDateBlocked(room.id, dateStr)}
-                                      className="h-3.5 w-3.5"
-                                      title={blocked ? "Nem foglalható" : "Foglalható"}
-                                    />
-                                  </div>
+                                  <Input
+                                    type="number"
+                                    placeholder="Db"
+                                    min={0}
+                                    max={99}
+                                    value={displayAvail}
+                                    onChange={(e) =>
+                                      handleAvailabilityChange(roomType.id, dateStr, e.target.value)
+                                    }
+                                    className={cn(
+                                      "h-6 text-[11px] text-center px-1 w-[52px]",
+                                      isUnavailable && "border-destructive text-destructive"
+                                    )}
+                                    title="Elérhető szobák száma"
+                                  />
                                 </div>
                               </td>
                             );
@@ -410,7 +423,7 @@ export default function AdminPricing() {
             <div className="text-sm text-muted-foreground space-y-1">
               <p>• <strong>Ár:</strong> az adott napi ár Ft-ban</p>
               <p>• <strong>Min:</strong> minimum foglalható éjszakák száma</p>
-              <p>• <strong>Checkbox:</strong> ha be van pipálva, a nap foglalható; ha nincs, akkor letiltott</p>
+              <p>• <strong>Db:</strong> elérhető szobák száma az adott szobatípusból (0 = nem foglalható)</p>
             </div>
           </CardContent>
         </Card>
