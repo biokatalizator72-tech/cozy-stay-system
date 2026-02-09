@@ -7,17 +7,16 @@ import { Users, ChevronLeft, ChevronRight, Bed, ArrowRight } from 'lucide-react'
 import { formatPrice } from '@/lib/supabase-helpers';
 import { format } from 'date-fns';
 
-interface Room {
+interface RoomType {
   id: string;
   name: string;
   description: string | null;
   capacity: number;
   base_price: number;
-  min_nights: number;
   amenities: string[];
 }
 
-interface RoomImage {
+interface RoomTypeImage {
   id: string;
   image_url: string;
   sort_order: number;
@@ -29,8 +28,8 @@ interface ChildCount {
 }
 
 interface RoomCardProps {
-  room: Room;
-  images: RoomImage[];
+  room: RoomType;
+  images: RoomTypeImage[];
   index: number;
   checkIn?: Date;
   checkOut?: Date;
@@ -179,12 +178,6 @@ export function RoomCard({ room, images, index, checkIn, checkOut, adults, child
             </Button>
           </Link>
         </div>
-
-        {room.min_nights > 1 && (
-          <p className="text-xs text-muted-foreground mt-2">
-            Minimum {room.min_nights} éjszaka
-          </p>
-        )}
       </CardContent>
     </Card>
   );

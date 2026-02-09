@@ -50,6 +50,7 @@ export type Database = {
           guest_phone: string | null
           id: string
           room_id: string | null
+          room_type_id: string | null
           special_requests: string | null
           status: string
           total_price: number
@@ -66,6 +67,7 @@ export type Database = {
           guest_phone?: string | null
           id?: string
           room_id?: string | null
+          room_type_id?: string | null
           special_requests?: string | null
           status?: string
           total_price: number
@@ -82,6 +84,7 @@ export type Database = {
           guest_phone?: string | null
           id?: string
           room_id?: string | null
+          room_type_id?: string | null
           special_requests?: string | null
           status?: string
           total_price?: number
@@ -93,6 +96,13 @@ export type Database = {
             columns: ["room_id"]
             isOneToOne: false
             referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_room_type_id_fkey"
+            columns: ["room_type_id"]
+            isOneToOne: false
+            referencedRelation: "room_types"
             referencedColumns: ["id"]
           },
         ]

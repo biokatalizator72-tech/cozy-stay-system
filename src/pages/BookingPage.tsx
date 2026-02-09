@@ -8,25 +8,23 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Badge } from '@/components/ui/badge';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ArrowLeft, CalendarIcon, Users, Loader2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, differenceInDays, addDays, eachDayOfInterval, isWithinInterval, parseISO } from 'date-fns';
+import { ArrowLeft, Users, Loader2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, differenceInDays, addDays, eachDayOfInterval, parseISO } from 'date-fns';
 import { hu } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { formatPrice } from '@/lib/supabase-helpers';
 import { cn } from '@/lib/utils';
 
-interface Room {
+interface RoomType {
   id: string;
   name: string;
   description: string | null;
   capacity: number;
   base_price: number;
-  min_nights: number;
   amenities: string[];
 }
 
-interface RoomImage {
+interface RoomTypeImage {
   id: string;
   image_url: string;
 }
@@ -38,25 +36,18 @@ interface PricingRule {
   min_nights: number;
 }
 
-interface Booking {
-  check_in: string;
-  check_out: string;
-  status: string;
-}
-
 type DateRange = {
   from: Date;
   to?: Date;
 };
 
 export default function BookingPage() {
-  const { roomId } = useParams();
+  const { roomTypeId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [room, setRoom] = useState<Room | null>(null);
-  const [images, setImages] = useState<RoomImage[]>([]);
+  const [roomType, setRoomType] = useState<RoomType | null>(null);
+  const [images, setImages] = useState<RoomTypeImage[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
-  const [bookedDates, setBookedDates] = useState<Date[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -65,7 +56,6 @@ export default function BookingPage() {
   // Parse query params for pre-filled dates
   const checkInParam = searchParams.get('checkIn');
   const checkOutParam = searchParams.get('checkOut');
-  const guestsParam = searchParams.get('guests');
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     if (checkInParam && checkOutParam) {
@@ -87,89 +77,59 @@ export default function BookingPage() {
 
   useEffect(() => {
     async function fetchData() {
-      if (!roomId) return;
+      if (!roomTypeId) return;
 
-      // Fetch room
-      const { data: roomData } = await supabase
-        .from('rooms')
+      // Fetch room type
+      const { data: roomTypeData } = await supabase
+        .from('room_types')
         .select('*')
-        .eq('id', roomId)
+        .eq('id', roomTypeId)
         .eq('is_active', true)
         .maybeSingle();
 
-      if (!roomData) {
+      if (!roomTypeData) {
         navigate('/');
         return;
       }
 
       // Fetch images
       const { data: imagesData } = await supabase
-        .from('room_images')
+        .from('room_type_images')
         .select('id, image_url')
-        .eq('room_id', roomId)
+        .eq('room_type_id', roomTypeId)
         .order('sort_order');
 
-      // Fetch pricing rules
+      // Fetch pricing rules for this room type
       const { data: rulesData } = await supabase
         .from('pricing_rules')
         .select('start_date, end_date, price_per_night, min_nights')
-        .eq('room_id', roomId);
+        .eq('room_type_id', roomTypeId);
 
-      // Fetch confirmed bookings to block dates
-      const { data: bookingsData } = await supabase
-        .from('bookings')
-        .select('check_in, check_out, status')
-        .eq('room_id', roomId)
-        .in('status', ['pending', 'confirmed']);
-
-      const transformedRoom: Room = {
-        ...roomData,
-        amenities: Array.isArray(roomData.amenities)
-          ? (roomData.amenities as unknown[]).map(a => String(a))
+      const transformed: RoomType = {
+        ...roomTypeData,
+        amenities: Array.isArray(roomTypeData.amenities)
+          ? (roomTypeData.amenities as unknown[]).map(a => String(a))
           : [],
       };
 
-      setRoom(transformedRoom);
+      setRoomType(transformed);
       setImages(imagesData || []);
       setPricingRules(rulesData || []);
-
-      // Calculate blocked dates
-      const blocked: Date[] = [];
-      bookingsData?.forEach((booking) => {
-        const days = eachDayOfInterval({
-          start: parseISO(booking.check_in),
-          end: addDays(parseISO(booking.check_out), -1),
-        });
-        blocked.push(...days);
-      });
-      setBookedDates(blocked);
-
       setLoading(false);
     }
 
     fetchData();
-  }, [roomId, navigate]);
+  }, [roomTypeId, navigate]);
 
   const getPriceForDate = (date: Date): number => {
-    if (!room) return 0;
+    if (!roomType) return 0;
     const dateStr = format(date, 'yyyy-MM-dd');
     
     const rule = pricingRules.find(
       (r) => r.start_date <= dateStr && r.end_date >= dateStr
     );
 
-    return rule?.price_per_night || room.base_price;
-  };
-
-  const getMinNightsForRange = (): number => {
-    if (!room || !dateRange?.from) return room?.min_nights || 1;
-    
-    const dateStr = format(dateRange.from, 'yyyy-MM-dd');
-    const rule = pricingRules.find(
-      (r) => r.start_date <= dateStr && r.end_date >= dateStr
-    );
-
-    return rule?.min_nights || room.min_nights;
+    return rule?.price_per_night || roomType.base_price;
   };
 
   const calculateTotal = (): { nights: number; total: number } => {
@@ -191,33 +151,18 @@ export default function BookingPage() {
     return { nights, total };
   };
 
-  const isDateDisabled = (date: Date): boolean => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (date < today) return true;
-    
-    return bookedDates.some(
-      (blocked) =>
-        blocked.getFullYear() === date.getFullYear() &&
-        blocked.getMonth() === date.getMonth() &&
-        blocked.getDate() === date.getDate()
-    );
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!room || !dateRange?.from || !dateRange?.to) {
+    if (!roomType || !dateRange?.from || !dateRange?.to) {
       toast.error('Kérjük válasszon érkezési és távozási dátumot');
       return;
     }
 
     const { nights, total } = calculateTotal();
-    const minNights = getMinNightsForRange();
 
-    if (nights < minNights) {
-      toast.error(`Minimum ${minNights} éjszakára foglalható`);
+    if (nights < 1) {
+      toast.error('Legalább 1 éjszakára szükséges foglalni');
       return;
     }
 
@@ -230,7 +175,7 @@ export default function BookingPage() {
 
     const { error } = await supabase.from('bookings').insert([
       {
-        room_id: room.id,
+        room_type_id: roomType.id,
         guest_name: formData.guest_name,
         guest_email: formData.guest_email,
         guest_phone: formData.guest_phone || null,
@@ -261,7 +206,7 @@ export default function BookingPage() {
     );
   }
 
-  if (!room) {
+  if (!roomType) {
     return null;
   }
 
@@ -289,7 +234,6 @@ export default function BookingPage() {
   }
 
   const { nights, total } = calculateTotal();
-  const minNights = getMinNightsForRange();
 
   return (
     <div className="min-h-screen bg-background">
@@ -301,20 +245,20 @@ export default function BookingPage() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="font-display text-xl font-semibold">{room.name} foglalása</h1>
+          <h1 className="font-display text-xl font-semibold">{roomType.name} foglalása</h1>
         </div>
       </header>
 
       <div className="container py-8">
         <div className="grid gap-8 lg:grid-cols-2">
-          {/* Left: Room details & Calendar */}
+          {/* Left: Room type details & Calendar */}
           <div className="space-y-6">
             {/* Image gallery */}
             {images.length > 0 && (
               <div className="relative aspect-[4/3] rounded-xl overflow-hidden">
                 <img
                   src={images[currentImage].image_url}
-                  alt={room.name}
+                  alt={roomType.name}
                   className="w-full h-full object-cover"
                 />
                 {images.length > 1 && (
@@ -352,32 +296,32 @@ export default function BookingPage() {
               </div>
             )}
 
-            {/* Room info */}
+            {/* Room type info */}
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h2 className="font-display text-2xl font-semibold">{room.name}</h2>
+                    <h2 className="font-display text-2xl font-semibold">{roomType.name}</h2>
                     <div className="flex items-center gap-2 mt-1 text-muted-foreground">
                       <Users className="h-4 w-4" />
-                      <span>{room.capacity} fő</span>
+                      <span>{roomType.capacity} fő</span>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold text-primary">
-                      {formatPrice(room.base_price)}
+                      {formatPrice(roomType.base_price)}
                     </div>
                     <div className="text-xs text-muted-foreground">/ éjszaka</div>
                   </div>
                 </div>
 
-                {room.description && (
-                  <p className="text-muted-foreground mb-4">{room.description}</p>
+                {roomType.description && (
+                  <p className="text-muted-foreground mb-4">{roomType.description}</p>
                 )}
 
-                {room.amenities.length > 0 && (
+                {roomType.amenities.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {room.amenities.map((amenity, idx) => (
+                    {roomType.amenities.map((amenity, idx) => (
                       <Badge key={idx} variant="secondary">
                         {amenity}
                       </Badge>
@@ -397,16 +341,15 @@ export default function BookingPage() {
                   mode="range"
                   selected={dateRange}
                   onSelect={(range) => setDateRange(range as DateRange | undefined)}
-                  disabled={isDateDisabled}
+                  disabled={(date) => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    return date < today;
+                  }}
                   numberOfMonths={1}
                   locale={hu}
                   className="rounded-md border"
                 />
-                {room.min_nights > 1 && (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Minimum {room.min_nights} éjszaka foglalható
-                  </p>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -440,11 +383,6 @@ export default function BookingPage() {
                           {formatPrice(total)}
                         </span>
                       </div>
-                      {nights < minNights && (
-                        <p className="text-destructive text-sm">
-                          Minimum {minNights} éjszaka szükséges!
-                        </p>
-                      )}
                     </div>
                   )}
 
@@ -513,7 +451,7 @@ export default function BookingPage() {
                     type="submit"
                     className="w-full"
                     size="lg"
-                    disabled={submitting || !dateRange?.from || !dateRange?.to || nights < minNights}
+                    disabled={submitting || !dateRange?.from || !dateRange?.to || nights < 1}
                   >
                     {submitting ? (
                       <>
