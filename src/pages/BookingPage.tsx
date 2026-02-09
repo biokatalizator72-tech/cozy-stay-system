@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -67,6 +68,7 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [currentImage, setCurrentImage] = useState(0);
+  const [isReturningGuest, setIsReturningGuest] = useState(false);
 
   // Parse query params for pre-filled dates and guests
   const checkInParam = searchParams.get('checkIn');
@@ -91,7 +93,6 @@ export default function BookingPage() {
     guest_name: '',
     guest_email: '',
     guest_phone: '',
-    arrival_time: '',
     special_requests: '',
   });
 
@@ -166,11 +167,11 @@ export default function BookingPage() {
     return rule?.price_per_night || roomType.base_price;
   };
 
-  const calculateTotal = (): { nights: number; total: number; originalTotal: number; discountPercent: number } => {
-    if (!dateRange?.from || !dateRange?.to) return { nights: 0, total: 0, originalTotal: 0, discountPercent: 0 };
+  const calculateTotal = (): { nights: number; total: number; originalTotal: number; discountPercent: number; loyaltyDiscountPercent: number } => {
+    if (!dateRange?.from || !dateRange?.to) return { nights: 0, total: 0, originalTotal: 0, discountPercent: 0, loyaltyDiscountPercent: 0 };
 
     const nightCount = differenceInDays(dateRange.to, dateRange.from);
-    if (nightCount <= 0) return { nights: 0, total: 0, originalTotal: 0, discountPercent: 0 };
+    if (nightCount <= 0) return { nights: 0, total: 0, originalTotal: 0, discountPercent: 0, loyaltyDiscountPercent: 0 };
 
     let total = 0;
     const days = eachDayOfInterval({
@@ -205,9 +206,15 @@ export default function BookingPage() {
       .sort((a, b) => b.min_nights - a.min_nights)[0];
 
     const ndPercent = applicableDiscount?.discount_percent ?? 0;
-    const discountedTotal = ndPercent > 0 ? Math.round(total * (1 - ndPercent / 100)) : total;
+    let discountedTotal = ndPercent > 0 ? Math.round(total * (1 - ndPercent / 100)) : total;
 
-    return { nights: nightCount, total: discountedTotal, originalTotal, discountPercent: ndPercent };
+    // Apply loyalty discount
+    const loyaltyPercent = isReturningGuest ? 10 : 0;
+    if (loyaltyPercent > 0) {
+      discountedTotal = Math.round(discountedTotal * (1 - loyaltyPercent / 100));
+    }
+
+    return { nights: nightCount, total: discountedTotal, originalTotal, discountPercent: ndPercent, loyaltyDiscountPercent: loyaltyPercent };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -225,7 +232,7 @@ export default function BookingPage() {
       return;
     }
 
-    if (!formData.guest_name || !formData.guest_email) {
+    if (!formData.guest_name || !formData.guest_email || !formData.guest_phone) {
       toast.error('Kérjük töltse ki a kötelező mezőket');
       return;
     }
@@ -237,12 +244,14 @@ export default function BookingPage() {
         room_type_id: roomType.id,
         guest_name: formData.guest_name,
         guest_email: formData.guest_email,
-        guest_phone: formData.guest_phone || null,
+        guest_phone: formData.guest_phone,
         check_in: format(dateRange.from, 'yyyy-MM-dd'),
         check_out: format(dateRange.to, 'yyyy-MM-dd'),
         total_price: total,
-        arrival_time: formData.arrival_time || null,
-        special_requests: formData.special_requests || null,
+        special_requests: [
+          isReturningGuest ? '[Törzsvendég kedvezmény igényelve]' : '',
+          formData.special_requests || '',
+        ].filter(Boolean).join('\n') || null,
         status: 'pending',
       },
     ]);
@@ -292,7 +301,7 @@ export default function BookingPage() {
     );
   }
 
-  const { nights, total, originalTotal, discountPercent } = calculateTotal();
+  const { nights, total, originalTotal, discountPercent, loyaltyDiscountPercent } = calculateTotal();
 
   return (
     <div className="min-h-screen bg-background">
@@ -436,18 +445,29 @@ export default function BookingPage() {
                           {format(dateRange.to, 'yyyy. MMMM d.', { locale: hu })}
                         </span>
                       </div>
+                      {discountPercent > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span>Éjszaka kedvezmény</span>
+                          <Badge className="bg-accent text-accent-foreground text-xs font-semibold">
+                            -{discountPercent}%
+                          </Badge>
+                        </div>
+                      )}
+                      {loyaltyDiscountPercent > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span>Törzsvendég kedvezmény</span>
+                          <Badge className="bg-accent text-accent-foreground text-xs font-semibold">
+                            -{loyaltyDiscountPercent}%
+                          </Badge>
+                        </div>
+                      )}
                       <div className="flex justify-between items-end text-sm">
                         <span>{nights} éjszaka</span>
                         <div className="text-right">
-                          {discountPercent > 0 && (
-                            <>
-                              <Badge className="bg-accent text-accent-foreground text-xs font-semibold mb-1">
-                                -{discountPercent}%
-                              </Badge>
-                              <div className="text-sm text-muted-foreground line-through">
-                                {formatPrice(originalTotal)}
-                              </div>
-                            </>
+                          {(discountPercent > 0 || loyaltyDiscountPercent > 0) && (
+                            <div className="text-sm text-muted-foreground line-through">
+                              {formatPrice(originalTotal)}
+                            </div>
                           )}
                           <span className="font-bold text-primary text-lg">
                             {formatPrice(total)}
@@ -483,7 +503,7 @@ export default function BookingPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="guest_phone">Telefon</Label>
+                    <Label htmlFor="guest_phone">Telefon *</Label>
                     <Input
                       id="guest_phone"
                       type="tel"
@@ -491,19 +511,19 @@ export default function BookingPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, guest_phone: e.target.value })
                       }
+                      required
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="arrival_time">Várható érkezési idő</Label>
-                    <Input
-                      id="arrival_time"
-                      placeholder="pl. 14:00"
-                      value={formData.arrival_time}
-                      onChange={(e) =>
-                        setFormData({ ...formData, arrival_time: e.target.value })
-                      }
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="returning_guest"
+                      checked={isReturningGuest}
+                      onCheckedChange={(checked) => setIsReturningGuest(checked === true)}
                     />
+                    <Label htmlFor="returning_guest" className="cursor-pointer">
+                      Törzsvendég kedvezmény (-10%)
+                    </Label>
                   </div>
 
                   <div className="space-y-2">
