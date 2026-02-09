@@ -6,13 +6,16 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Save, CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, eachDayOfInterval, addMonths } from 'date-fns';
+import { format, eachDayOfInterval, addMonths, getDay } from 'date-fns';
 import { hu } from 'date-fns/locale';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 interface RoomType {
   id: string;
@@ -44,6 +47,8 @@ interface DayPricing {
   ruleId: string | null;
 }
 
+const DAY_LABELS = ['Hétfő', 'Kedd', 'Szerda', 'Csütörtök', 'Péntek', 'Szombat', 'Vasárnap'];
+
 export default function AdminPricing() {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
@@ -57,6 +62,17 @@ export default function AdminPricing() {
     from: new Date(),
     to: addMonths(new Date(), 1),
   });
+
+  // Bulk fill state
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkRoomTypeId, setBulkRoomTypeId] = useState<string | null>(null);
+  const [bulkDateFrom, setBulkDateFrom] = useState<Date | undefined>(undefined);
+  const [bulkDateTo, setBulkDateTo] = useState<Date | undefined>(undefined);
+  const [bulkDays, setBulkDays] = useState<boolean[]>([true, true, true, true, true, true, true]);
+  const [bulkPrice, setBulkPrice] = useState('');
+  const [bulkMinNights, setBulkMinNights] = useState('');
+  const [bulkCapacity, setBulkCapacity] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const days = dateRange.from && dateRange.to 
     ? eachDayOfInterval({ start: dateRange.from, end: dateRange.to })
@@ -98,11 +114,9 @@ export default function AdminPricing() {
   }, [dateRange]);
 
   const getAvailabilityCount = (roomTypeId: string, dateStr: string): number => {
-    // Check edited state first
     if (editedAvailability[roomTypeId]?.[dateStr] !== undefined) {
       return parseInt(editedAvailability[roomTypeId][dateStr]) || 0;
     }
-    // Check database
     const avail = availability.find(a => a.room_type_id === roomTypeId && a.date === dateStr);
     return avail?.available_count ?? 0;
   };
@@ -160,7 +174,6 @@ export default function AdminPricing() {
     setSaving(true);
     
     try {
-      // Save pricing rules
       for (const roomTypeId of Object.keys(editedPrices)) {
         for (const dateStr of Object.keys(editedPrices[roomTypeId])) {
           const { price, minNights } = editedPrices[roomTypeId][dateStr];
@@ -188,7 +201,7 @@ export default function AdminPricing() {
           } else if (priceNum) {
             await supabase.from('pricing_rules').insert([
               {
-                room_id: roomTypeId, // Keep for backward compatibility
+                room_id: roomTypeId,
                 room_type_id: roomTypeId,
                 start_date: dateStr,
                 end_date: dateStr,
@@ -200,7 +213,6 @@ export default function AdminPricing() {
         }
       }
 
-      // Save availability
       for (const roomTypeId of Object.keys(editedAvailability)) {
         for (const dateStr of Object.keys(editedAvailability[roomTypeId])) {
           const availableCount = parseInt(editedAvailability[roomTypeId][dateStr]) || 0;
@@ -234,12 +246,103 @@ export default function AdminPricing() {
 
   const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedAvailability).length > 0;
 
+  // Bulk fill functions
+  const openBulkDialog = (roomTypeId: string) => {
+    setBulkRoomTypeId(roomTypeId);
+    setBulkDateFrom(dateRange.from);
+    setBulkDateTo(dateRange.to);
+    setBulkDays([true, true, true, true, true, true, true]);
+    setBulkPrice('');
+    setBulkMinNights('');
+    setBulkCapacity('');
+    setBulkDialogOpen(true);
+  };
+
+  const saveBulk = async () => {
+    if (!bulkRoomTypeId || !bulkDateFrom || !bulkDateTo) return;
+    if (!bulkPrice && !bulkMinNights && !bulkCapacity) {
+      toast.error('Legalább egy mezőt ki kell tölteni');
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
+      const allDays = eachDayOfInterval({ start: bulkDateFrom, end: bulkDateTo });
+      
+      for (const day of allDays) {
+        // getDay: 0=Sunday, 1=Monday ... 6=Saturday
+        // bulkDays: [Mon, Tue, Wed, Thu, Fri, Sat, Sun] = indices 0-6
+        const jsDay = getDay(day); // 0=Sun, 1=Mon...6=Sat
+        const bulkIndex = jsDay === 0 ? 6 : jsDay - 1; // convert to Mon=0...Sun=6
+        
+        if (!bulkDays[bulkIndex]) continue;
+
+        const dateStr = format(day, 'yyyy-MM-dd');
+
+        // Upsert pricing_rules if price or minNights given
+        if (bulkPrice || bulkMinNights) {
+          const priceNum = bulkPrice ? parseFloat(bulkPrice) : null;
+          const minNightsNum = bulkMinNights ? parseInt(bulkMinNights) : null;
+
+          const existingRule = pricingRules.find(
+            r => r.room_type_id === bulkRoomTypeId && r.start_date === dateStr && r.end_date === dateStr
+          );
+
+          if (existingRule) {
+            const updateData: Record<string, number> = {};
+            if (priceNum) updateData.price_per_night = priceNum;
+            if (minNightsNum) updateData.min_nights = minNightsNum;
+            await supabase.from('pricing_rules').update(updateData).eq('id', existingRule.id);
+          } else if (priceNum) {
+            await supabase.from('pricing_rules').insert([{
+              room_id: bulkRoomTypeId,
+              room_type_id: bulkRoomTypeId,
+              start_date: dateStr,
+              end_date: dateStr,
+              price_per_night: priceNum,
+              min_nights: minNightsNum || 1,
+            }]);
+          }
+        }
+
+        // Upsert room_type_availability if capacity given
+        if (bulkCapacity) {
+          const count = parseInt(bulkCapacity);
+          const existingAvail = availability.find(
+            a => a.room_type_id === bulkRoomTypeId && a.date === dateStr
+          );
+
+          if (existingAvail) {
+            await supabase.from('room_type_availability').update({ available_count: count }).eq('id', existingAvail.id);
+          } else {
+            await supabase.from('room_type_availability').insert([{
+              room_type_id: bulkRoomTypeId,
+              date: dateStr,
+              available_count: count,
+            }]);
+          }
+        }
+      }
+
+      toast.success('Tömeges kitöltés mentve');
+      setBulkDialogOpen(false);
+      setEditedPrices({});
+      setEditedAvailability({});
+      fetchData();
+    } catch (error) {
+      toast.error('Hiba a mentéskor');
+    }
+    setBulkSaving(false);
+  };
+
+  const bulkRoomType = roomTypes.find(rt => rt.id === bulkRoomTypeId);
+
   return (
     <AdminLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-display text-2xl lg:text-3xl font-semibold">Árazás</h1>
+            <h1 className="font-display text-2xl lg:text-3xl font-semibold">Ártábla</h1>
             <p className="text-muted-foreground mt-1">Szobatípusonkénti árak és elérhetőség</p>
           </div>
           {hasChanges && (
@@ -343,6 +446,13 @@ export default function AdminPricing() {
                             <div className="text-[10px] text-muted-foreground">
                               Alap: {roomType.base_price.toLocaleString()} Ft
                             </div>
+                            <button
+                              type="button"
+                              className="text-[10px] text-blue-600 hover:underline cursor-pointer mt-0.5"
+                              onClick={() => openBulkDialog(roomType.id)}
+                            >
+                              tömeges kitöltés
+                            </button>
                           </td>
                           {days.map((day) => {
                             const dateStr = format(day, 'yyyy-MM-dd');
@@ -428,6 +538,123 @@ export default function AdminPricing() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Bulk fill dialog */}
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tömeges kitöltés{bulkRoomType ? ` – ${bulkRoomType.name}` : ''}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Date range */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Mettől</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left font-normal h-9 text-sm">
+                      <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                      {bulkDateFrom ? format(bulkDateFrom, 'yyyy.MM.dd', { locale: hu }) : 'Válassz...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={bulkDateFrom}
+                      onSelect={setBulkDateFrom}
+                      locale={hu}
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Meddig</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left font-normal h-9 text-sm">
+                      <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                      {bulkDateTo ? format(bulkDateTo, 'yyyy.MM.dd', { locale: hu }) : 'Válassz...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={bulkDateTo}
+                      onSelect={setBulkDateTo}
+                      locale={hu}
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            {/* Day checkboxes */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Napok</Label>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {DAY_LABELS.map((label, i) => (
+                  <label key={label} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={bulkDays[i]}
+                      onCheckedChange={(checked) => {
+                        const next = [...bulkDays];
+                        next[i] = !!checked;
+                        setBulkDays(next);
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Inputs */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Kapacitás (db)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="—"
+                  value={bulkCapacity}
+                  onChange={e => setBulkCapacity(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Ár (HUF)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="—"
+                  value={bulkPrice}
+                  onChange={e => setBulkPrice(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Min. éjszaka</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="—"
+                  value={bulkMinNights}
+                  onChange={e => setBulkMinNights(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>Mégsem</Button>
+            <Button onClick={saveBulk} disabled={bulkSaving}>
+              {bulkSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Mentés
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
