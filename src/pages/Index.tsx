@@ -238,8 +238,8 @@ export default function Index() {
           r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
         );
         const nightlyRate = rule ? Number(rule.price_per_night) : rt.base_price;
-        // Adults pay full price
-        total += nightlyRate * guestCounts.adults;
+         // Base room price (covers base occupancy, e.g. 2 adults)
+         total += nightlyRate;
         // Children pay discounted price based on their age bracket
         guestCounts.children.forEach(child => {
           if (child.count <= 0) return;

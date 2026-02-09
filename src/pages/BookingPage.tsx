@@ -171,8 +171,8 @@ export default function BookingPage() {
 
     days.forEach((day) => {
       const nightlyRate = getPriceForDate(day);
-      // Adults pay full price
-      total += nightlyRate * adults;
+      // Base room price (covers base occupancy, e.g. 2 adults)
+      total += nightlyRate;
       // Children pay discounted price
       children.forEach(child => {
         if (child.count <= 0) return;
