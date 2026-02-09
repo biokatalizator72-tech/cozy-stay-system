@@ -1,80 +1,44 @@
 
-# Kalkulalt teljes osszeg megjelenirese a szobatipus kartyakon
 
-## Osszefoglalo
+# Arkalkulacio javitasa: vendegszam es gyerekkedvezmeny figyelembevetele
 
-A szobatipus kartyakon az alapar helyett a teljes tartózkodás kalkulált összege jelenik meg, figyelembe véve a szezonális árakat (pricing_rules) és az éjszakák számát.
+## A problema
 
-## Jelenlegi mukodes
+Az arszamitas jelenleg csak `ar_per_ejszaka * ejszakak_szama` keplettel szamol, de az arak **fonkent es ejszakankent** ertendok. Tehat:
+- 2 felnott + 1 gyerek (3-12 eves, 50% kedvezmeny) eseten a helyes keplet:
+  `(2 * teljes_ar + 1 * teljes_ar * 0.5) * ejszakak`
 
-- A RoomCard a `room.base_price`-t jeleníti meg "/ éjszaka" felirattal
-- Az árkalkuláció csak a BookingPage-en történik meg
+## Megoldas
 
-## Tervezett valtozasok
+### 1. Index.tsx - handleSearch arkalkulacio modositasa
 
-### 1. Index.tsx - Árkalkuláció a keresés során
+A `calculatedPrices` szamitasnal figyelembe vesszuk a vendegszamot:
 
-A `handleSearch` függvényben a szűrés után minden elérhető szobatípushoz lekérdezzük a `pricing_rules` táblát, és kiszámoljuk a teljes összeget:
-
-- Lekérdezés: `pricing_rules` ahol `room_type_id` az elérhető szobatípusok ID-jai között van
-- Minden éjszakára: ha van `pricing_rule` az adott dátumra, annak az ára; egyébként a `base_price`
-- Az eredményt egy `Map<roomTypeId, totalPrice>` struktúrában tároljuk
-- Ezt átadjuk a RoomCard-nak egy új `totalPrice` prop-ként
-
-### 2. RoomCard.tsx - Megjelenítés módosítása
-
-- Új opcionális prop: `totalPrice?: number` és `nights?: number`
-- Ha `totalPrice` megvan: a kalkulált teljes összeget jelenítjük meg "összesen" felirattal
-- Ha nincs (pl. keresés előtti állapot): marad a `base_price` "/ éjszaka" felirattal
-
-**Megjelenítés:**
 ```
-120 000 Ft
-2 éjszaka összesen
+Minden szobatipusra, minden ejszakara:
+  napi_ar = pricing_rule vagy base_price
+  total += napi_ar * adults
+  + minden gyerek korcsoport:
+      total += napi_ar * (1 - discount_percent/100) * count
 ```
 
-### 3. Modositando fajlok
+Ehhez szukseg van a `childAgeBrackets` adatokra (mar elerheto a state-ben), hogy a `bracketId` alapjan megtalaljuk a `discount_percent` erteket.
+
+### 2. BookingPage.tsx - calculateTotal javitasa
+
+Ugyanezt a logikakat kell alkalmazni a foglalasi oldalon is, hogy az aras konzisztens legyen. Az `adults` es `children` parametereket az URL-bol olvassuk be.
+
+## Modositando fajlok
 
 | Fajl | Valtozas |
 |------|----------|
-| `src/pages/Index.tsx` | pricing_rules lekérdezés + totalPrice számítás + prop átadás |
-| `src/components/guest/RoomCard.tsx` | totalPrice + nights prop, megjelenítés módosítás |
+| `src/pages/Index.tsx` | Arkalkulacio bovitese: vendegszam * ar + gyerekkedvezmeny |
+| `src/pages/BookingPage.tsx` | Ugyanaz a kalkulacios logika, URL parameterekbol olvasva |
 
-## Technikai reszletek
+## Pelda szamitas
 
-### Arkalkulacios logika (Index.tsx)
+Deluxe B, 1 ejszaka, ar: 40 000 Ft/fo/ej
+- 2 felnott: 2 x 40 000 = 80 000 Ft
+- 1 gyerek (3-12 eves, 50% kedvezmeny): 1 x 40 000 x 0.5 = 20 000 Ft
+- Osszesen: 100 000 Ft
 
-```typescript
-// A handleSearch-ben, a szures utan:
-const roomTypeIds = sorted.map(rt => rt.id);
-
-const { data: pricingRules } = await supabase
-  .from('pricing_rules')
-  .select('room_type_id, start_date, end_date, price_per_night')
-  .in('room_type_id', roomTypeIds);
-
-// Minden szobatipusra kiszamoljuk a teljes arat
-const totalPrices: Record<string, number> = {};
-sorted.forEach(rt => {
-  let total = 0;
-  stayDates.forEach(dateStr => {
-    const rule = pricingRules?.find(r => 
-      r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
-    );
-    total += rule?.price_per_night || rt.base_price;
-  });
-  totalPrices[rt.id] = total;
-});
-```
-
-### RoomCard megjelenitesi valtozas
-
-```typescript
-// Regi:
-{formatPrice(room.base_price)}
-/ éjszaka
-
-// Uj (ha van totalPrice):
-{formatPrice(totalPrice)}
-{nights} éjszaka összesen
-```
