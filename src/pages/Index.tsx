@@ -24,6 +24,7 @@ interface RoomType {
   name: string;
   description: string | null;
   capacity: number;
+  base_capacity: number;
   base_price: number;
   amenities: string[];
   sort_order: number;
@@ -238,14 +239,22 @@ export default function Index() {
           r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
         );
         const nightlyRate = rule ? Number(rule.price_per_night) : rt.base_price;
-         // Base room price (covers base occupancy, e.g. 2 adults)
-         total += nightlyRate;
-        // Children pay discounted price based on their age bracket
+        // Base room price (covers base occupancy)
+        total += nightlyRate;
+        // Children: free slots fill base_capacity first, extras pay discounted per-person rate
+        const freeChildSlots = Math.max(0, rt.base_capacity - guestCounts.adults);
+        let remainingFreeSlots = freeChildSlots;
         guestCounts.children.forEach(child => {
           if (child.count <= 0) return;
-          const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
-          const discountPercent = bracket?.discount_percent ?? 0;
-          total += nightlyRate * (1 - discountPercent / 100) * child.count;
+          const absorbed = Math.min(remainingFreeSlots, child.count);
+          const paidCount = child.count - absorbed;
+          remainingFreeSlots -= absorbed;
+          if (paidCount > 0) {
+            const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
+            const discountPercent = bracket?.discount_percent ?? 0;
+            const perPersonRate = nightlyRate / rt.base_capacity;
+            total += perPersonRate * (1 - discountPercent / 100) * paidCount;
+          }
         });
       });
       calculatedPrices[rt.id] = total;
