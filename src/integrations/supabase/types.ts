@@ -267,6 +267,7 @@ export type Database = {
           address: string | null
           booking_email_template: string | null
           created_at: string
+          deposit_percent: number
           description: string | null
           email: string | null
           guest_fields: Json | null
@@ -282,6 +283,7 @@ export type Database = {
           address?: string | null
           booking_email_template?: string | null
           created_at?: string
+          deposit_percent?: number
           description?: string | null
           email?: string | null
           guest_fields?: Json | null
@@ -297,6 +299,7 @@ export type Database = {
           address?: string | null
           booking_email_template?: string | null
           created_at?: string
+          deposit_percent?: number
           description?: string | null
           email?: string | null
           guest_fields?: Json | null

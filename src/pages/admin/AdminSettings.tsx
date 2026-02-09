@@ -331,7 +331,7 @@ export default function AdminSettings() {
               <CardHeader>
                 <CardTitle>Email sablon</CardTitle>
                 <CardDescription>
-                  Ez az email megy ki a vendégnek foglalás után. Használható változók: {'{guest_name}'}, {'{room_name}'}, {'{check_in}'}, {'{check_out}'}, {'{total_price}'}, {'{property_name}'}
+                  Ez az email megy ki a vendégnek foglalás után. Használható változók: {'{guest_name}'}, {'{room_name}'}, {'{check_in}'}, {'{check_out}'}, {'{total_price}'}, {'{deposit}'}, {'{property_name}'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
