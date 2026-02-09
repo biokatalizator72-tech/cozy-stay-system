@@ -1,36 +1,46 @@
 
+# Hero szekció javitasok
 
-# A {total_price} es {deposit} hiba vegleges javitasa
+## 1. "Szobáink megtekintese" gomb torlese
 
-## A problema gyokere
+A `PropertyHero.tsx` komponensbol torlom a teljes gomb blokkot (56-60. sor):
 
-Az edge function szerver oldalon azonnal frissult, de a bongeszoben futo frontend (BookingPage) meg a regi kodot hasznalta, ami formatazott stringet kuldott ("54 000"). Az uj edge function `parseFloat("54 000")` = 54, igy mindket ertek hibas lett.
+```tsx
+<div className="mt-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+  <Button size="lg" variant="secondary" ...>
+    Szobáink megtekintése
+  </Button>
+</div>
+```
 
-## Megoldas
+A `Button` import is eltavolithato, ha a navigacios gombok (ChevronLeft/Right) nem hasznaljak -- de azok igen, tehat a `Button` import marad.
 
-Az edge function-ben a `total_price` erteketol szurijuk ki a nem szam karaktereket (szokoz, stb.) mielott `parseFloat`-ot hivunk. Igy mindket formatum mukodik: nyers szam (54000) es formatazott string ("54 000").
+## 2. Hatterkep blur/fako megjelenes eltavolitasa
 
-### `supabase/functions/send-booking-confirmation/index.ts` (39. sor)
+A jelenlegi kep `mix-blend-overlay opacity-30` osztalyokat hasznal, ami nagyon fakova teszi. Ezt lecserelem, hogy a kep eletesebben latszodjon:
 
-**Jelenleg:**
-```typescript
-const totalPriceNum = parseFloat(total_price) || 0;
+**Jelenleg (33. sor):**
+```
+className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-30"
 ```
 
 **Javitva:**
-```typescript
-const rawPrice = String(total_price).replace(/[^\d.,]/g, '').replace(',', '.');
-const totalPriceNum = parseFloat(rawPrice) || 0;
+```
+className="absolute inset-0 w-full h-full object-cover"
 ```
 
-Ez a sor minden nem szam karaktert (szokoz, specialis szokoz, stb.) eltavolit, majd a magyar tizedes vesszot pontra csereli. Igy:
-- `"54 000"` -> `"54000"` -> `54000`
-- `54000` -> `"54000"` -> `54000`
-- `"72 000"` -> `"72000"` -> `72000`
+A gradient overlay (35. sor) megmarad, hogy a szoveg olvashato legyen a kep felett.
+
+## 3. Hero kep optimalis merete
+
+Ez nem kod-valtozas, csak informacio:
+- **Ajanlott meret:** 1920 x 1080 px (16:9)
+- **Retina:** 2560 x 1440 px
+- **Formatum:** JPEG, 80-85% minoseg
+- **Fajlmeret:** max 300-500 KB
 
 ## Erintett fajl
 
 | Fajl | Valtozas |
 |------|----------|
-| `supabase/functions/send-booking-confirmation/index.ts` | Robusztus szam-parszolas a `total_price` feldolgozasanal |
-
+| `src/components/guest/PropertyHero.tsx` | Gomb torlese + kep opacity/blend eltavolitasa |
