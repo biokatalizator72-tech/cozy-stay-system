@@ -260,6 +260,21 @@ export default function BookingPage() {
       toast.error('Hiba történt a foglalás során');
       console.error(error);
     } else {
+      // Send confirmation email (non-blocking)
+      try {
+        await supabase.functions.invoke('send-booking-confirmation', {
+          body: {
+            guest_name: formData.guest_name,
+            guest_email: formData.guest_email,
+            room_name: roomType.name,
+            check_in: format(dateRange.from, 'yyyy. MMMM d.', { locale: hu }),
+            check_out: format(dateRange.to, 'yyyy. MMMM d.', { locale: hu }),
+            total_price: total.toLocaleString('hu-HU'),
+          },
+        });
+      } catch (emailError) {
+        console.error('Email küldési hiba:', emailError);
+      }
       setSuccess(true);
     }
 
