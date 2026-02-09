@@ -1,168 +1,85 @@
 
+# Vendegoldal atalakitasa: szobatipusok megjelenitese szobak helyett
 
-# Vendégoldali keresőűrlap bővítése felnőtt/gyerek kategóriákkal
+## Osszefoglalo
 
-## Összefoglaló
+A vendeg oldalon a kereses eredmenyekent nem egyedi szobak, hanem **szobatipusok** jelennek meg. A vendeg szobatipust foglal, nem konkret szobat.
 
-A jelenlegi egyszerű "Vendégek" számláló helyett külön bemeneti mezőket hozunk létre a felnőtteknek és a különböző korcsoportú gyerekeknek. A korcsoportok a `child_age_brackets` táblából dinamikusan töltődnek be.
+## Valtozasok
 
-## Jelenlegi állapot az adatbázisban
+### 1. Index.tsx - Fo oldal
 
-A `child_age_brackets` tábla tartalma:
-- **0-2 éves**: 100% kedvezmény (ingyenes)
-- **3-12 éves**: 50% kedvezmény
+**Adatlekerdezes atalakitasa:**
+- `rooms` tabla helyett `room_types` tablat kerdezzuk le (is_active = true)
+- `room_images` helyett `room_type_images` tablat hasznaljuk
+- A `Room` interface helyett `RoomType` interface (id, name, description, base_capacity, extra_beds, adult_extra_beds, capacity, base_price, amenities, sort_order)
 
-Ezek alapján a keresőűrlap a következő kategóriákat fogja megjeleníteni:
-- **Felnőtt**
-- **Gyerek (0-2 éves)**
-- **Gyerek (3-12 éves)**
+**Elerhetseg vizsgalat:**
+- A `room_type_availability` tablat kerdezzuk le a kivalasztott idoszakra
+- Egy szobatipus akkor elerheto, ha **minden** napra van legalabb 1 szabad szoba (available_count >= 1)
+- A `bookings` tabla foglalasait is figyelembe vesszuk: az adott room_type_id-hoz tartozo szobak foglalasai csokkentik a kontingenseket
+- A kapacitas szurest a szobatipus `capacity` mezojebol szamoljuk
 
-## Frontend változások
+**Szovegek frissitese:**
+- "Elerheto szobak" --> "Elerheto szobatipusok" (vagy megmaradhat "Elerheto szobak" ha a felhasznalo szamara igy termeszetesebb)
 
-### 1. SearchForm.tsx módosítások
+### 2. RoomCard.tsx - Szobakartya
 
-**Új props**:
-```typescript
-interface ChildAgeBracket {
-  id: string;
-  from_age: number;
-  to_age: number;
-  discount_percent: number;
-  sort_order: number;
-}
+**Interface atalakitasa:**
+- `Room` --> `RoomType` (ugyanazok a mezok: id, name, description, capacity, base_price, amenities)
+- `RoomImage` marad (id, image_url, sort_order)
+- A prop nev maradhat `room` vagy atnevezheto `roomType`-ra
 
-interface GuestCounts {
-  adults: number;
-  children: { bracketId: string; count: number }[];
-}
+**Foglalasi link:**
+- `/book/:roomId` --> `/book/:roomTypeId`
+- A URL parameterek maradnak: checkIn, checkOut, adults, children
 
-interface SearchFormProps {
-  maxCapacity: number;
-  childAgeBrackets: ChildAgeBracket[];
-  onSearch: (checkIn: Date, checkOut: Date, guestCounts: GuestCounts) => void;
-  isSearching?: boolean;
-}
+### 3. BookingPage.tsx - Foglalasi oldal
+
+**Route parameterek:**
+- `roomId` --> `roomTypeId`
+- A `rooms` tabla helyett `room_types` tablat kerdezi le
+- A `room_images` helyett `room_type_images` tablat hasznaljuk
+- A `pricing_rules` lekerdezesben `room_type_id`-t hasznalunk `room_id` helyett
+
+**Foglalas mentese:**
+- A `bookings` tablaba `room_id` helyett (vagy mellett) a `room_type_id`-t mentjuk
+- Ehhez a `bookings` tablaban szukseg lesz egy `room_type_id` oszlopra (adatbazis migracio)
+
+### 4. App.tsx - Route
+
+- `/book/:roomId` --> `/book/:roomTypeId`
+
+### 5. Adatbazis migracio
+
+A `bookings` tablahoz hozzaadjuk a `room_type_id` oszlopot:
+```sql
+ALTER TABLE public.bookings 
+  ADD COLUMN room_type_id uuid REFERENCES public.room_types(id);
 ```
 
-**Új state**:
-```typescript
-const [adults, setAdults] = useState(2);
-const [childCounts, setChildCounts] = useState<Record<string, number>>({});
+Ez lehetove teszi, hogy a foglalas szobatipushoz kossuk, es kesobbi lepesben az admin rendelje hozza a konkret szobat.
+
+## Technikai reszletek
+
+### Elerhetseg szamitasi logika
+
+```
+1. Lekerdezzuk az osszes room_type_availability rekordot a keresett datumtartomanyra
+2. Lekerdezzuk az osszes foglalast (pending/confirmed) ami atfed a datumtartomanyal
+3. Minden szobatipusra, minden napra:
+   - admin_count = room_type_availability.available_count (ha nincs rekord, 0)
+   - booked_count = az adott napra eso foglalasok szama
+   - free = admin_count - booked_count
+4. Egy szobatipus elerheto, ha MINDEN napra free >= 1
 ```
 
-**Új UI struktúra** (2 sorban):
+### Modositando fajlok
 
-1. sor: Érkezés | Távozás | Keresés gomb
-2. sor: Felnőttek | Gyerek (0-2 éves) | Gyerek (3-12 éves)
-
-Minden vendég kategória azonos stílusban jelenik meg:
-```
-┌─────────────────────────────────┐
-│ Felnőttek                       │
-│ ┌───┐        ┌───┐              │
-│ │ - │   2 fő │ + │              │
-│ └───┘        └───┘              │
-└─────────────────────────────────┘
-```
-
-### 2. Index.tsx módosítások
-
-**Új adatlekérés**:
-```typescript
-const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
-
-// Fetch child age brackets
-const { data: bracketsData } = await supabase
-  .from('child_age_brackets')
-  .select('*')
-  .order('sort_order');
-```
-
-**SearchParams interface bővítése**:
-```typescript
-interface SearchParams {
-  checkIn: Date;
-  checkOut: Date;
-  adults: number;
-  children: { bracketId: string; age: number; count: number }[];
-}
-```
-
-**handleSearch módosítása**:
-- Az összes vendég számát kiszámítja: `adults + sum(children.count)`
-- Ellenőrzi, hogy a szoba kapacitása elegendő-e
-- Az új adatstruktúrát továbbítja a RoomCard komponensnek
-
-### 3. RoomCard.tsx módosítások
-
-**Új props**:
-```typescript
-interface RoomCardProps {
-  room: Room;
-  images: RoomImage[];
-  index: number;
-  checkIn?: Date;
-  checkOut?: Date;
-  adults?: number;
-  children?: { bracketId: string; count: number }[];
-}
-```
-
-**URL paraméterek bővítése**:
-```typescript
-const buildBookingUrl = () => {
-  // ...
-  if (adults) params.set('adults', adults.toString());
-  if (children) params.set('children', JSON.stringify(children));
-  // ...
-};
-```
-
-## Vizuális terv
-
-A keresőűrlap új elrendezése mobilon és desktopon:
-
-**Desktop (2 sor)**:
-```
-┌──────────────┬──────────────┬────────────────────────┐
-│   Érkezés    │   Távozás    │  Szabad szobák keresése│
-├──────────────┼──────────────┼────────────────────────┤
-│  Felnőttek   │Gyerek (0-2)  │    Gyerek (3-12)       │
-│   [- 2 +]    │   [- 0 +]    │      [- 0 +]           │
-└──────────────┴──────────────┴────────────────────────┘
-```
-
-**Mobil (egymás alatt)**:
-```
-┌────────────────────────────────┐
-│           Érkezés              │
-├────────────────────────────────┤
-│           Távozás              │
-├────────────────────────────────┤
-│         Felnőttek              │
-│          [- 2 +]               │
-├────────────────────────────────┤
-│      Gyerek (0-2 éves)         │
-│          [- 0 +]               │
-├────────────────────────────────┤
-│      Gyerek (3-12 éves)        │
-│          [- 0 +]               │
-├────────────────────────────────┤
-│   Szabad szobák keresése       │
-└────────────────────────────────┘
-```
-
-## Módosítandó fájlok
-
-1. **src/components/guest/SearchForm.tsx** - Teljes átdolgozás az új mezőkkel
-2. **src/pages/Index.tsx** - Child age brackets lekérése, SearchParams bővítése
-3. **src/components/guest/RoomCard.tsx** - URL paraméterek bővítése
-
-## Technikai megjegyzések
-
-- A gyerek korcsoportok dinamikusan töltődnek a `child_age_brackets` táblából
-- Ha új korcsoportot ad hozzá az admin, az automatikusan megjelenik a keresőben
-- A felnőttek minimális száma: 1
-- A gyerekek minimális száma kategóriánként: 0
-- Az összes vendég nem haladhatja meg a `maxCapacity` értékét
-
+| Fajl | Valtozas |
+|------|----------|
+| `src/pages/Index.tsx` | room_types + room_type_images + room_type_availability lekerdezes |
+| `src/components/guest/RoomCard.tsx` | Interface atnevezes, URL /book/:roomTypeId |
+| `src/pages/BookingPage.tsx` | room_types lekerdezes, room_type_id mentes |
+| `src/App.tsx` | Route atnevezes |
+| Adatbazis migracio | bookings.room_type_id oszlop |
