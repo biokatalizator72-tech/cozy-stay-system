@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Save, CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, eachDayOfInterval, addMonths, getDay } from 'date-fns';
 import { hu } from 'date-fns/locale';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -74,6 +75,7 @@ export default function AdminPricing() {
   const [bulkMinNights, setBulkMinNights] = useState('');
   const [bulkCapacity, setBulkCapacity] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [depositPercent, setDepositPercent] = useState<number>(50);
 
   const days = dateRange.from && dateRange.to 
     ? eachDayOfInterval({ start: dateRange.from, end: dateRange.to })
@@ -108,10 +110,18 @@ export default function AdminPricing() {
       .from('rooms')
       .select('id, room_type_id');
 
+    const { data: settingsData } = await supabase
+      .from('property_settings')
+      .select('deposit_percent')
+      .maybeSingle();
+
     setRoomTypes(roomTypesData || []);
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
     setAvailability(availabilityData || []);
+    if (settingsData?.deposit_percent != null) {
+      setDepositPercent(settingsData.deposit_percent);
+    }
     setLoading(false);
   };
 
@@ -540,6 +550,44 @@ export default function AdminPricing() {
                 <ScrollBar orientation="horizontal" />
               </ScrollArea>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-lg">Előleg mértéke</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">Előleg százalék:</span>
+              <Select
+                value={depositPercent.toString()}
+                onValueChange={async (val) => {
+                  const newPercent = parseInt(val);
+                  setDepositPercent(newPercent);
+                  const { error } = await supabase
+                    .from('property_settings')
+                    .update({ deposit_percent: newPercent })
+                    .neq('id', '00000000-0000-0000-0000-000000000000');
+                  if (error) {
+                    toast.error('Hiba az előleg mentésekor');
+                  } else {
+                    toast.success(`Előleg: ${newPercent}%`);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="12">12%</SelectItem>
+                  <SelectItem value="20">20%</SelectItem>
+                  <SelectItem value="30">30%</SelectItem>
+                  <SelectItem value="50">50%</SelectItem>
+                  <SelectItem value="100">100%</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardContent>
         </Card>
 

@@ -1,0 +1,1 @@
+ALTER TABLE public.property_settings ADD COLUMN deposit_percent integer NOT NULL DEFAULT 50;

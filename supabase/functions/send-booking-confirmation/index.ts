@@ -30,11 +30,16 @@ serve(async (req) => {
     // Fetch email template and property name
     const { data: settings } = await supabase
       .from("property_settings")
-      .select("booking_email_template, name")
+      .select("booking_email_template, name, deposit_percent")
       .limit(1)
       .single();
 
     const propertyName = settings?.name || "Szállás";
+    const depositPercent = settings?.deposit_percent ?? 50;
+    const totalPriceNum = parseFloat(total_price) || 0;
+    const depositAmount = Math.round(totalPriceNum * depositPercent / 100);
+    const depositFormatted = depositAmount.toLocaleString("hu-HU");
+
     let emailBody = settings?.booking_email_template || 
       `Kedves {guest_name},\n\nKöszönjük foglalását!\n\n- Szoba: {room_name}\n- Érkezés: {check_in}\n- Távozás: {check_out}\n- Végösszeg: {total_price} Ft\n\nÜdvözlettel,\n{property_name}`;
 
@@ -45,6 +50,7 @@ serve(async (req) => {
       .replace(/{check_in}/g, check_in || "")
       .replace(/{check_out}/g, check_out || "")
       .replace(/{total_price}/g, total_price || "")
+      .replace(/{deposit}/g, depositFormatted)
       .replace(/{property_name}/g, propertyName);
 
     const emailResponse = await resend.emails.send({
