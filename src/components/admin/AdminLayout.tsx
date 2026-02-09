@@ -25,7 +25,7 @@ const navigation = [
   { name: 'Áttekintés', href: '/admin', icon: Building2 },
   { name: 'Szobatípusok', href: '/admin/room-types', icon: Layers },
   { name: 'Szobák', href: '/admin/rooms', icon: Bed },
-  { name: 'Árazás', href: '/admin/pricing', icon: Calendar },
+  { name: 'Ártábla', href: '/admin/pricing', icon: Calendar },
   { name: 'Kedvezmények', href: '/admin/discounts', icon: Percent },
   { name: 'Foglalások', href: '/admin/bookings', icon: ClipboardList },
   { name: 'Beállítások', href: '/admin/settings', icon: Settings },
