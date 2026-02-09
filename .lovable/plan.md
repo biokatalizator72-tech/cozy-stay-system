@@ -1,212 +1,146 @@
 
-
-# Kedvezmenyek beallitasa az Admin feluleten
+# Gyermekarak beepitese a Kedvezmenyek beallitasa oldalra
 
 ## Osszefoglalo
 
-Ket tipus kedvezmenyt vezetunk be:
-1. **Ejszakak szamatol fuggo kedvezmenyek** - automatikusan alkalmazodik a tartozkodas hossza alapjan
-2. **Kulonleges kedvezmenyek** - elofoglalasi, torzsvendeg stb., amit az admin valaszthat ki a foglalashoz
+A meglevo AdminDiscounts.tsx oldalhoz hozzaadunk egy uj szekciot a gyermekarak kezelesere, amely lehetove teszi a gyermek korcsoportok es a hozzajuk tartozo kedvezmenyek beallitasat.
 
-## Uj adatbazis tablak
+## Uj adatbazis tabla
 
-### 1. `night_discounts` - Ejszakak szamatol fuggo kedvezmenyek
+### `child_age_brackets` - Gyermek korkategoriak
 
 | Mezo | Tipus | Leiras |
 |------|-------|--------|
 | id | uuid | Elsodleges kulcs |
-| min_nights | integer | Minimum ejszakak szama (pl. 3) |
-| discount_percent | integer | Kedvezmeny % (pl. 5) |
+| from_age | integer | Kortol (0-99) |
+| to_age | integer | Korig (0-99) |
+| discount_percent | integer | Kedvezmeny % (0-100, ahol 100 = ingyenes) |
 | sort_order | integer | Rendezesi sorrend |
 | created_at | timestamp | Letrehozas ideje |
 
-Pelda adatok:
-- 3 ejszakatol: 5%
-- 6 ejszakatol: 10%
-- 10 ejszakatol: 15%
+## Admin felulet modositasok
 
-### 2. `special_discounts` - Kulonleges kedvezmenyek
+### Uj szekco az AdminDiscounts.tsx-ben
 
-| Mezo | Tipus | Leiras |
-|------|-------|--------|
-| id | uuid | Elsodleges kulcs |
-| name | text | Kedvezmeny neve (pl. "Elofoglalasi kedvezmeny") |
-| discount_percent | integer | Kedvezmeny % (pl. 10) |
-| is_active | boolean | Aktiv-e (megjelenitendo-e) |
-| sort_order | integer | Rendezesi sorrend |
-| created_at | timestamp | Letrehozas ideje |
-
-Pelda kedvezmenyek:
-- Elofoglalasi kedvezmeny: 10%
-- Torzsvendeg kedvezmeny: 15%
-- Csaladbarat kedvezmeny: 5%
-
-## Admin felulet
-
-### Uj menupont: "Kedvezmenyek" (/admin/discounts)
-
-Az oldal ket szekciot tartalmaz:
+A meglevo ket szekco (Ejszaka kedvezmenyek, Kulonleges kedvezmenyek) melle erkezik egy harmadik:
 
 ```text
 +--------------------------------------------------+
-|  KEDVEZMENYEK BEALLITASA                         |
+|  GYERMEKARAZAS                                   |
 +--------------------------------------------------+
 |                                                  |
-|  [1] Ejszakak szama szerinti kedvezmenyek        |
+|  Gyermekedvezmeny engedelyezese: [x] Be / [ ] Ki |
+|                                                  |
 |  +--------------------------------------------+  |
-|  |  Min. ejszaka   |   Kedvezmeny %           |  |
-|  |  [  3  ]        |   [  5  ] %              |  |
-|  |  [  6  ]        |   [ 10  ] %              |  |
-|  |  [  10 ]        |   [ 15  ] %              |  |
+|  |  Minimum eletkor | Maximum eletkor | Kedv% |  |
+|  |  [Lenyilo 0-99]  | [Lenyilo 0-99]  | [100] |  |
+|  |  0               | 2               | 100%  |  |
+|  |  3               | 11              | 50%   |  |
 |  |                                            |  |
-|  |  [+ Uj sav hozzaadasa]                     |  |
+|  |  [+ Uj eletkor sav hozzaadasa]             |  |
 |  +--------------------------------------------+  |
 |                                                  |
-|  [2] Kulonleges kedvezmenyek                     |
-|  +--------------------------------------------+  |
-|  |  Nev                    | Kedvezmeny % |Aktiv|
-|  |  Elofoglalasi kedvezmeny|   [ 10 ] %  | [x] |  |
-|  |  Torzsvendeg kedvezmeny |   [ 15 ] %  | [x] |  |
-|  |                                            |  |
-|  |  [+ Uj kedvezmeny felvitele]               |  |
-|  +--------------------------------------------+  |
-|                                                  |
+|  [Mentes]                                        |
 +--------------------------------------------------+
 ```
 
-### Uj kedvezmeny felvitele dialog
+### Komponens funkcionalitas
 
-```text
-+-----------------------------------+
-|  Uj kedvezmeny felvitele          |
-+-----------------------------------+
-|                                   |
-|  Kedvezmeny neve:                 |
-|  [Lenyilo: Elofoglalasi / Torzs-  |
-|   vendeg / Egyeb...]              |
-|                                   |
-|  vagy Egyedi nev:                 |
-|  [____________________________]   |
-|                                   |
-|  Kedvezmeny merteke:              |
-|  [Lenyilo: 5% / 10% / 15% ...]    |
-|                                   |
-|  [Mentes]                         |
-+-----------------------------------+
-```
+1. **Toggle kapcsolo**: "Gyermekedvezmeny engedelyezese" - ha ki van kapcsolva, az egesz szekco szurkitve jelenik meg
+2. **Korkategoria sorok**: Minden sor harom lenyilo mezovel
+   - Minimum eletkor (0-99)
+   - Maximum eletkor (0-99)
+   - Kedvezmeny % (0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 - ahol 100% = ingyenes)
+3. **Uj eletkor sav hozzaadasa gomb**: Uj ures sort ad hozza
+4. **Torles gomb**: Minden sor mellett
+5. **Mentes gomb**: Az osszes modositast menti
 
-## Arszamitas logika
+### Pelda ertekek
 
-A kedvezmenyeket a kovetkezo sorrendben alkalmazzuk:
-
-1. **Alapar szamitas**: ejszakak * napi ar
-2. **Ejszaka kedvezmeny alkalmazasa**: ha tobb ejszakat foglal, mint a beallitott minimum
-3. **Kulonleges kedvezmeny alkalmazasa**: ha a vendeg valasztott ilyen kedvezmenyt
-
-Pelda:
-- 5 ejszaka x 20.000 Ft = 100.000 Ft alapar
-- 3+ ejszakas kedvezmeny (5%): -5.000 Ft
-- Elofoglalasi kedvezmeny (10%): -9.500 Ft
-- **Vegosszeg: 85.500 Ft**
+- 0-2 eves: 100% kedvezmeny (ingyenes)
+- 3-11 eves: 50% kedvezmeny (felár)
+- 12-17 eves: 20% kedvezmeny
 
 ## Technikai reszletek
 
-### Uj fajlok
+### Adatbazis migracio
 
-| Fajl | Leiras |
-|------|--------|
-| src/pages/admin/AdminDiscounts.tsx | Kedvezmenyek kezelese oldal |
-| src/pages/admin/DiscountsRoute.tsx | Auth wrapper |
+```sql
+create table public.child_age_brackets (
+  id uuid primary key default gen_random_uuid(),
+  from_age integer not null default 0,
+  to_age integer not null default 2,
+  discount_percent integer not null default 100,
+  sort_order integer not null default 0,
+  created_at timestamp with time zone not null default now()
+);
 
-### Modositando fajlok
+alter table public.child_age_brackets enable row level security;
+
+create policy "Anyone can view child age brackets"
+  on public.child_age_brackets for select
+  using (true);
+
+create policy "Admins can manage child age brackets"
+  on public.child_age_brackets for all
+  using (public.has_role(auth.uid(), 'admin'))
+  with check (public.has_role(auth.uid(), 'admin'));
+```
+
+### Modositando fajl
 
 | Fajl | Modositas |
 |------|-----------|
-| src/components/admin/AdminLayout.tsx | Uj "Kedvezmenyek" menupont hozzaadasa (Percent ikon) |
-| src/App.tsx | Uj route: /admin/discounts |
-| src/pages/BookingPage.tsx | Ejszaka kedvezmeny automatikus alkalmazasa + opcionalis kulonleges kedvezmeny valasztas |
-| src/pages/Index.tsx | Kedvezmenyek megjelenitese a szobakartyan |
+| src/pages/admin/AdminDiscounts.tsx | Uj "Gyermekarazas" szekco hozzaadasa a meglevo ket szekco ele |
 
-### Adatbazis migraciok
+### Uj state valtozok az AdminDiscounts.tsx-ben
 
-```sql
--- Ejszaka kedvezmenyek tabla
-create table public.night_discounts (
-  id uuid primary key default gen_random_uuid(),
-  min_nights integer not null,
-  discount_percent integer not null default 0,
-  sort_order integer not null default 0,
-  created_at timestamp with time zone not null default now()
-);
+```typescript
+interface ChildAgeBracket {
+  id: string;
+  from_age: number;
+  to_age: number;
+  discount_percent: number;
+  sort_order: number;
+}
 
-alter table public.night_discounts enable row level security;
-
--- Mindenki olvashatja
-create policy "Anyone can view night discounts"
-  on public.night_discounts for select
-  using (true);
-
--- Admin kezelheti
-create policy "Admins can manage night discounts"
-  on public.night_discounts for all
-  using (public.has_role(auth.uid(), 'admin'))
-  with check (public.has_role(auth.uid(), 'admin'));
-
--- Kulonleges kedvezmenyek tabla
-create table public.special_discounts (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  discount_percent integer not null default 0,
-  is_active boolean not null default true,
-  sort_order integer not null default 0,
-  created_at timestamp with time zone not null default now()
-);
-
-alter table public.special_discounts enable row level security;
-
--- Mindenki olvashatja
-create policy "Anyone can view special discounts"
-  on public.special_discounts for select
-  using (true);
-
--- Admin kezelheti
-create policy "Admins can manage special discounts"
-  on public.special_discounts for all
-  using (public.has_role(auth.uid(), 'admin'))
-  with check (public.has_role(auth.uid(), 'admin'));
+const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
+const [childPricingEnabled, setChildPricingEnabled] = useState(true);
 ```
 
-### RLS szabalyok
+### UI elemek
 
-- `night_discounts`: Mindenki olvashat, admin CRUD
-- `special_discounts`: Mindenki olvashat, admin CRUD
+A gyermekarazas szekcioval bovul az oldal:
 
-### Vendegoldali valtozasok
+1. **Card komponens** "Gyermekarazas" cimmel
+2. **Switch komponens** az engedelyezeshez
+3. **Table komponens** a korkategoriakhoz:
+   - Oszlopok: Min. eletkor | Max. eletkor | Kedvezmeny % | Torles
+   - Minden cellaban Select lenyilo
+4. **Button** uj sor hozzaadasahoz
+5. **Button** menteshez
 
-A foglalasi oldalon (BookingPage.tsx):
+### Lenyilo ertekek
 
-1. **Automatikus ejszaka kedvezmeny**: A rendszer automatikusan alkalmazza a legjobb kedvezmenyt a foglalt ejszakak szama alapjan
+- Eletkor valaszto: 0, 1, 2, 3, ..., 99
+- Kedvezmeny szazalek: 0%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100% (Ingyenes)
 
-2. **Kulonleges kedvezmeny valasztas**: Uj lenyilo mezo, ahol a vendeg kivalaszthatja az elerheto kedvezmenyeket (pl. elofoglalasi)
+### Vizualis elhelyezes
 
-3. **Ar lebontas megjelenites**:
+A szekcio sorrendje az oldalon:
+1. Gyermekarazas (uj)
+2. Ejszakak szama szerinti kedvezmenyek (meglevo)
+3. Kulonleges kedvezmenyek (meglevo)
+
+## Arszamitasra gyakorolt hatas
+
+A gyermekarak a felnott ar alapjan szamolodnak:
+
 ```text
-+--------------------------------+
-|  5 ejszaka x 20.000 Ft         |
-|  Reszosszeg:        100.000 Ft |
-|  5+ ej. kedv. (-5%):  -5.000 Ft|
-|  Elofoglalasi (-10%): -9.500 Ft|
-|  --------------------------    |
-|  Vegosszeg:          85.500 Ft |
-+--------------------------------+
+Gyermek ar = Felnott ar * (1 - discount_percent / 100)
+
+Pelda:
+- Felnott ar: 20.000 Ft / fo / ej
+- 5 eves gyerek, 50% kedvezmeny
+- Gyermek ar: 20.000 * 0.5 = 10.000 Ft / fo / ej
 ```
-
-### Navigacio bovites
-
-Az AdminLayout.tsx-ben uj menupont:
-- Nev: "Kedvezmenyek"
-- Utvonal: /admin/discounts
-- Ikon: Percent (lucide-react)
-
-A meglevo menupontok kozott az "Arazas" es "Foglalasok" kozott helyezkedik el.
-
