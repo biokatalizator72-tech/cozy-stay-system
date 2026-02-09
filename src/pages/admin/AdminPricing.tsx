@@ -51,6 +51,7 @@ const DAY_LABELS = ['Hétfő', 'Kedd', 'Szerda', 'Csütörtök', 'Péntek', 'Szo
 
 export default function AdminPricing() {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; room_type_id: string | null }[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [availability, setAvailability] = useState<RoomTypeAvailability[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,7 +104,12 @@ export default function AdminPricing() {
       .gte('date', startDate)
       .lte('date', endDate);
 
+    const { data: roomsData } = await supabase
+      .from('rooms')
+      .select('id, room_type_id');
+
     setRoomTypes(roomTypesData || []);
+    setRooms(roomsData || []);
     setPricingRules(rulesData || []);
     setAvailability(availabilityData || []);
     setLoading(false);
@@ -199,9 +205,14 @@ export default function AdminPricing() {
               })
               .eq('id', existingRule.id);
           } else if (priceNum) {
+            const roomId = rooms.find(r => r.room_type_id === roomTypeId)?.id;
+            if (!roomId) {
+              console.error('No room found for room_type_id:', roomTypeId);
+              continue;
+            }
             await supabase.from('pricing_rules').insert([
               {
-                room_id: roomTypeId,
+                room_id: roomId,
                 room_type_id: roomTypeId,
                 start_date: dateStr,
                 end_date: dateStr,
@@ -238,6 +249,7 @@ export default function AdminPricing() {
       setEditedAvailability({});
       fetchData();
     } catch (error) {
+      console.error('Pricing save error:', error);
       toast.error('Hiba a mentéskor');
     }
     
@@ -294,8 +306,13 @@ export default function AdminPricing() {
             if (minNightsNum) updateData.min_nights = minNightsNum;
             await supabase.from('pricing_rules').update(updateData).eq('id', existingRule.id);
           } else if (priceNum) {
+            const roomId = rooms.find(r => r.room_type_id === bulkRoomTypeId)?.id;
+            if (!roomId) {
+              console.error('No room found for room_type_id:', bulkRoomTypeId);
+              continue;
+            }
             await supabase.from('pricing_rules').insert([{
-              room_id: bulkRoomTypeId,
+              room_id: roomId,
               room_type_id: bulkRoomTypeId,
               start_date: dateStr,
               end_date: dateStr,
@@ -330,6 +347,7 @@ export default function AdminPricing() {
       setEditedAvailability({});
       fetchData();
     } catch (error) {
+      console.error('Bulk save error:', error);
       toast.error('Hiba a mentéskor');
     }
     setBulkSaving(false);
