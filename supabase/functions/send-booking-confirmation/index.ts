@@ -49,7 +49,7 @@ serve(async (req) => {
       .replace(/{room_name}/g, room_name || "")
       .replace(/{check_in}/g, check_in || "")
       .replace(/{check_out}/g, check_out || "")
-      .replace(/{total_price}/g, total_price || "")
+      .replace(/{total_price}/g, totalPriceNum.toLocaleString("hu-HU"))
       .replace(/{deposit}/g, depositFormatted)
       .replace(/{property_name}/g, propertyName);
 
