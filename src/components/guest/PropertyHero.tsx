@@ -30,7 +30,7 @@ export function PropertyHero({ name, description, images }: PropertyHeroProps) {
         <img
           src={displayImages[currentImage].image_url}
           alt={name}
-          className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-30"
+          className="absolute inset-0 w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-background/40" />
       </div>
@@ -53,11 +53,6 @@ export function PropertyHero({ name, description, images }: PropertyHeroProps) {
             {description}
           </p>
         )}
-        <div className="mt-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-          <Button size="lg" variant="secondary" className="font-medium shadow-lg hover:shadow-xl transition-shadow">
-            Szobáink megtekintése
-          </Button>
-        </div>
       </div>
 
       {displayImages.length > 1 && (
