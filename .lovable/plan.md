@@ -1,85 +1,28 @@
 
 
-# Artabla: atnevezes + "Tomeges kitoltes" funkcio
+# Fix: Tomeges kitoltes nem menti az adatokat
 
-## Valtozasok osszefoglalasa
+## Problema
 
-1. Az "Arazas" menupont atnevezese "Artabla"-ra
-2. Minden szobatipus neve ala egy kattinthato "tomeges kitoltes" link kerul az artabla tablazatban
-3. A linkre kattintva egy Dialog (pop-up) nyilik meg, a referenciakepek alapjan
+A `pricing_rules` tabla `room_id` oszlopara foreign key constraint van, ami a `rooms` tablara hivatkozik. A jelenlegi kod a **room_type_id**-t irja be a `room_id` mezobe is, ami ervenytelen foreign key -- ezert minden INSERT hibara fut.
 
-## Reszletes terv
+Ez a hiba a `saveBulk()` fuggvenyben es a `savePricing()` fuggvenyben is jelen van.
 
-### 1. Atnevezes: "Arazas" -> "Artabla"
+## Megoldas
 
-**Modositando fajlok:**
-- `src/components/admin/AdminLayout.tsx` -- a 28. sorban `name: 'Árazás'` -> `name: 'Ártábla'`
-- `src/pages/admin/AdminPricing.tsx` -- az oldal `h1` cimsor es leiras
+### Modositando fajl: `src/pages/admin/AdminPricing.tsx`
 
-### 2. "Tomeges kitoltes" link
+1. **Rooms lekerese**: A `fetchData()` fuggvenyben lekerjuk a `rooms` tablat is (legalabb `id` es `room_type_id` mezok), es eltaroljuk state-ben.
 
-Az artabla tablazat bal oldali sticky oszlopaban, minden szobatipus neve es alapara ala kerul egy kattinthato "tomeges kitoltes" felirat (kek szin, kis betumeret). Kattintasra megnyitja a Dialog-ot az adott szobatipussal elojelolve.
+2. **`saveBulk()` javitasa**: Az INSERT muveletnel a `room_id` mezobe az adott `room_type_id`-hoz tartozo elso szoba (`rooms` tabla) ID-jat hasznaljuk, nem a room_type_id-t.
 
-### 3. Tomeges kitoltes Dialog
+3. **`savePricing()` javitasa**: Ugyanez a logika -- a room_type_id helyett a megfelelo room id-t hasznaljuk.
 
-A referenciakepek alapjan a Dialog tartalma:
+### Konkret valtozasok
 
-```text
-+----------------------------------------------------------+
-|  Tomeges kitoltes - [Szobatipus neve]                    |
-+----------------------------------------------------------+
-|                                                          |
-|  Mettol: [ 2026-02-09 ]    Meddig: [ 2026-03-09 ]       |
-|                                                          |
-|  Napok:                                                  |
-|  [x] hetfo  [x] kedd  [x] szerda  [x] csutortok         |
-|  [x] pentek [x] szombat [x] vasarnap                     |
-|                                                          |
-|  Kapacitas: [    ] db                                    |
-|  Ar:        [    ] HUF                                   |
-|  Min. tartozkodas: [    ] ej                             |
-|                                                          |
-|            [ Megsem ]  [ Mentes ]                        |
-+----------------------------------------------------------+
-```
-
-**Mezok:**
-- **Mettol / Meddig**: Datumvalaszto (Calendar Popover), alapertelmezetten az artabla aktualis datumtartomanyaval toltve
-- **Napok**: 7 db Checkbox (hetfo-vasarnap), alapertelmezetten mind bejelolve. Igy lehet pl. csak hetvegi vagy hetkoznapi arat beallitani
-- **Kapacitas**: Szam input, ures = nem modositja az elerheto szobak szamat
-- **Ar**: Szam input (HUF), ures = nem modositja az arat
-- **Min. tartozkodas**: Szam input, ures = nem modositja a minimum ejszakakat
-
-**Mentes logika:**
-1. Vegigiteralunk a datumtartomany minden napjan
-2. Ellenorizzuk, hogy az adott nap (hetfo=1, ..., vasarnap=0) kivalasztott-e a checkboxokkal
-3. Ha ar vagy min. ejszaka meg van adva: upsert a `pricing_rules` tablaba (start_date = end_date = az adott nap, room_type_id = a kivalasztott szobatipus)
-4. Ha kapacitas meg van adva: upsert a `room_type_availability` tablaba
-5. Sikeres mentes utan: toast uzenet, dialog bezarasa, adatok ujratoltese
-
-### Technikai reszletek
-
-**Modositando fajl:** `src/pages/admin/AdminPricing.tsx`
-
-**Uj state valtozok:**
-- `bulkDialogOpen: boolean` -- dialog lathatosag
-- `bulkRoomTypeId: string | null` -- melyik szobatipusra vonatkozik
-- `bulkDateFrom: Date | undefined` -- kezdo datum
-- `bulkDateTo: Date | undefined` -- zaro datum
-- `bulkDays: boolean[]` -- 7 elemu tomb (hetfo-vasarnap), alapbol mind `true`
-- `bulkPrice: string` -- ar mezo
-- `bulkMinNights: string` -- min. ejszakak mezo
-- `bulkCapacity: string` -- kapacitas mezo
-- `bulkSaving: boolean` -- mentes folyamatban jelzo
-
-**Uj fuggvenyek:**
-- `openBulkDialog(roomTypeId)` -- beallitja a state-et es megnyitja a dialogot
-- `saveBulk()` -- a fent leirt mentes logika, `eachDayOfInterval` + `getDay()` alapu szures
-
-**Felhasznalt komponensek (mar a projektben):**
-- `Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogFooter`
-- `Calendar` + `Popover` + `PopoverContent` + `PopoverTrigger`
-- `Checkbox` (Radix)
-- `Input`
-- `Button`
+- Uj state: `rooms` tomb (id, room_type_id)
+- `fetchData`-ban uj lekerdezes: `supabase.from('rooms').select('id, room_type_id')`
+- `saveBulk()` INSERT-ben: `room_id` erteke a `rooms.find(r => r.room_type_id === bulkRoomTypeId)?.id`
+- `savePricing()` INSERT-ben: hasonlo javitas
+- Hibakezelesi log is javul, mert az `error` objektumot a `catch` agban kiloggoljuk
 
