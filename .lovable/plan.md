@@ -1,52 +1,49 @@
 
 
-# Eloleg szazalek beallitas az Artabla oldalon
+# A {deposit} hiba javitasa - hianyzo nullak
 
-## Osszefoglalas
+## A problema oka
 
-Egy uj `deposit_percent` mezo kerul a `property_settings` tablaba, amelyet az Artabla oldal aljan egy egyszeru lenyilo menuvel (Select) lehet allitani. Az edge function ezt az erteket hasznalja a `{deposit}` placeholder kiszamitasahoz.
+A `total_price` ertek a foglalasi oldalrol mar **formatazva** erkezik az edge function-be: `72 000` (szokozzel elvalasztva, magyar szamformat). A `parseFloat("72 000")` viszont csak a szokoz elotti reszt olvassa be, tehat `72`-t kap. Igy `72 * 50 / 100 = 36` lesz az eloleg.
 
-## Valtozasok
+## Megoldas
 
-### 1. Adatbazis migracio
+Ket helyen kell javitani:
 
-Uj oszlop a `property_settings` tablaban:
+### 1. `src/pages/BookingPage.tsx` (272. sor)
 
-```sql
-ALTER TABLE property_settings
-ADD COLUMN deposit_percent integer NOT NULL DEFAULT 50;
+A `total_price`-t nyers szamkent kuldjuk, ne formatazva:
+
+**Jelenleg:**
+```typescript
+total_price: total.toLocaleString('hu-HU'),
 ```
 
-### 2. `src/pages/admin/AdminPricing.tsx`
-
-Az artabla kartya ala kerul egy kis szekcio:
-
-- Betoltes: a `fetchData`-ban lekerdezzuk a `property_settings` tablabol a `deposit_percent` erteket
-- Megjelenites: egy `Select` komponens az alabbi opcikkal: 12%, 20%, 30%, 50%, 100%
-- Mentes: valtozaskor azonnal menti a `property_settings` tablaba (`UPDATE ... SET deposit_percent = X`)
-
-Vizualisan az artabla-kartya alatt jelenik meg egy egyszeru sor:
-
-```
-Eloleg merteke: [v 50% ]
+**Javitva:**
+```typescript
+total_price: total,
 ```
 
-### 3. `supabase/functions/send-booking-confirmation/index.ts`
+### 2. `supabase/functions/send-booking-confirmation/index.ts` (52. sor)
 
-- A `property_settings` lekerdezesbe bekerül a `deposit_percent` mezo
-- A `total_price`-bol kiszamolja: `deposit = Math.round(totalPriceNum * depositPercent / 100)`
-- Uj placeholder csere: `.replace(/{deposit}/g, depositFormatted)`
+A `{total_price}` placeholder-t formatazva jelenitjuk meg az emailben (hogy szepen nezzen ki ezres elvalasztoval):
 
-### 4. `src/pages/admin/AdminSettings.tsx`
+**Jelenleg:**
+```typescript
+.replace(/{total_price}/g, total_price || "")
+```
 
-Az Email sablon tab leirasat kiegeszitjuk a `{deposit}` valtozoval, hogy a felhasznalo tudja hasznalni.
+**Javitva:**
+```typescript
+.replace(/{total_price}/g, totalPriceNum.toLocaleString("hu-HU"))
+```
+
+Igy a szamitas helyes lesz (`72000 * 50 / 100 = 36000`), es az emailben is szepen formatazva jelenik meg mind a vegosszeg (`72 000`), mind az eloleg (`36 000`).
 
 ## Erintett fajlok
 
 | Fajl | Valtozas |
 |------|----------|
-| Adatbazis migracio | `deposit_percent` oszlop hozzaadasa |
-| `src/pages/admin/AdminPricing.tsx` | Select komponens az eloleg szazalekhoz |
-| `supabase/functions/send-booking-confirmation/index.ts` | `{deposit}` kiszamolasa a `deposit_percent` alapjan |
-| `src/pages/admin/AdminSettings.tsx` | `{deposit}` valtozo felsorolasa az email sablon leirasban |
+| `src/pages/BookingPage.tsx` | `total_price`-t nyers szamkent kuldi |
+| `supabase/functions/send-booking-confirmation/index.ts` | `{total_price}` megjelenitest formatazza |
 
