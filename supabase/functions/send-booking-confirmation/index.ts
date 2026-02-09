@@ -36,7 +36,8 @@ serve(async (req) => {
 
     const propertyName = settings?.name || "Szállás";
     const depositPercent = settings?.deposit_percent ?? 50;
-    const totalPriceNum = parseFloat(total_price) || 0;
+    const rawPrice = String(total_price).replace(/[^\d.,]/g, '').replace(',', '.');
+    const totalPriceNum = parseFloat(rawPrice) || 0;
     const depositAmount = Math.round(totalPriceNum * depositPercent / 100);
     const depositFormatted = depositAmount.toLocaleString("hu-HU");
 
