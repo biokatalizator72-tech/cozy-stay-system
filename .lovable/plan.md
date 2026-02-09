@@ -1,64 +1,38 @@
 
 
-# Ejszaka kedvezmenyek alkalmazasa + athuzott ar megjelenites
+# Foglalasi oldal modositasok
 
-## Problema
+## Valtozasok
 
-A `night_discounts` tablaban levo kedvezmenyek (3+ ej = 5%, 6+ ej = 10%) nincsenek alkalmazva sem a keresesi talalati oldalon (Index.tsx), sem a foglalasi oldalon (BookingPage.tsx).
+### Fajl: `src/pages/BookingPage.tsx`
 
-## Megoldas
+**1. Telefon mezo kotelezo**
+- A "Telefon" label mellé csillag (`*`) kerul
+- Az Input mezohoz `required` attributum
+- A `handleSubmit` validacioban a `guest_phone` is ellenorzesre kerul (a `guest_name` es `guest_email` melle)
 
-### 1. `src/pages/Index.tsx` -- kedvezmeny lekerdezes es alkalmazas
+**2. "Varhato erkezesi ido" mezo torlese**
+- A teljes `arrival_time` mezo blokk (497-507. sorok) torlesre kerul
+- A `formData` state-bol is kikerul az `arrival_time`
+- A `handleSubmit`-ben az `arrival_time` mar nem kerul mentes
 
-**fetchData():**
-- Lekerjuk a `night_discounts` tablat es eltaroljuk state-ben (`nightDiscounts`)
+**3. Torzsvendeg kedvezmeny checkbox**
+- Uj state: `isReturningGuest` (boolean, default false)
+- A "Specialis keresek" mezo ele kerul egy Checkbox + Label sor: "Torzsvendeg kedvezmeny (-10%)"
+- Ha be van pipalva, a `calculateTotal()` fuggvenyben a vegosszegbol meg 10%-ot levonunk (az ejszaka kedvezmeny utan)
+- Az ar osszesitesben megjelenik a torzsvendeg kedvezmeny informacio (kulon sor, pl. "Torzsvendeg kedvezmeny: -10%")
+- A `handleSubmit`-ben a `special_requests` mezobe automatikusan beleirodhat a "[Torzsvendeg kedvezmeny igenyelve]" szoveg, vagy kulon mezoben taroljuk
 
-**handleSearch() arszamitas:**
-- A `calculatedPrices` kiszamitasa utan megkeressuk a megfelelo kedvezmenyt:
-  - `nightDiscounts.filter(d => nights >= d.min_nights)` kozul a legnagyobb `min_nights` erteku
-  - Alkalmazzuk: `discountedPrice = total * (1 - discount_percent / 100)`
-- Ket ar-tombot tarolunk state-ben:
-  - `originalPrices` -- kedvezmeny nelkuli osszeg
-  - `totalPrices` -- kedvezmenyezett vegosszeg
-- Atkuldjuk a `discountPercent`-et is a `RoomCard`-nak
+### Arszamitas logika
 
-### 2. `src/components/guest/RoomCard.tsx` -- athuzott ar megjelenites
+A `calculateTotal()` visszateresi erteke bovul: `loyaltyDiscountPercent` mezo. A szamitas sorrendje:
+1. Alap szobaar + gyerek felarak (jelenlegi logika)
+2. Ejszaka kedvezmeny alkalmazasa (jelenlegi logika)
+3. Torzsvendeg kedvezmeny alkalmazasa (uj): ha `isReturningGuest`, meg -10% a vegosszegbol
 
-Uj props: `originalPrice?: number`, `discountPercent?: number`
+### Megjelenites az ar osszesitesben
 
-Az ar megjelenitese a szallas.hu referencia alapjan:
-- Ha van kedvezmeny:
-  - Kis `-X%` badge (zold vagy narancs szinu)
-  - Eredeti ar athuzva (szurke, kisebb betumeret, `line-through`)
-  - Kedvezmenyezett ar nagyban, felkoverrel (primary szin)
-- Ha nincs kedvezmeny: jelenlegi megjelenites marad
-
-```text
-Pelda megjelenites:
-
-        -10%
-    ~~246 000 Ft~~
-    222 000 Ft
-    6 ejszaka osszesen
-```
-
-### 3. `src/pages/BookingPage.tsx` -- foglalasi oldal
-
-**fetchData():**
-- Lekerjuk a `night_discounts` tablat
-
-**calculateTotal():**
-- Az osszeg kiszamitasa utan alkalmazzuk a kedvezmenyt
-- Ket erteket adunk vissza: `{ nights, total, originalTotal, discountPercent }`
-
-**Megjelenites (ar osszesito resz, ~410-430 sor):**
-- Ha van kedvezmeny, az eredeti ar athuzva, mellette/alatta a kedvezmenyezett ar es a szazalek
-
-## Erintett fajlok
-
-| Fajl | Valtozas |
-|------|----------|
-| `src/pages/Index.tsx` | `night_discounts` fetch + alkalmazas + `originalPrices` state |
-| `src/components/guest/RoomCard.tsx` | Uj props (`originalPrice`, `discountPercent`) + athuzott ar UI |
-| `src/pages/BookingPage.tsx` | `night_discounts` fetch + alkalmazas + athuzott ar megjelenites |
+Ha torzsvendeg kedvezmeny aktiv:
+- Kulon sor a datum osszesitesben: "Torzsvendeg kedvezmeny" felirattal es "-10%" badge-dzsel
+- Az athuzott ar az osszes kedvezmeny elotti ar, a vegso ar az osszes kedvezmeny utani
 
