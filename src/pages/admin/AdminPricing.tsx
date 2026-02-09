@@ -477,35 +477,35 @@ export default function AdminPricing() {
                               >
                                 <div className="space-y-0.5">
                                   <Input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     placeholder="Ár"
                                     value={displayPrice}
                                     onChange={(e) =>
-                                      handlePriceChange(roomType.id, dateStr, 'price', e.target.value)
+                                      handlePriceChange(roomType.id, dateStr, 'price', e.target.value.replace(/[^0-9]/g, ''))
                                     }
-                                    className="h-6 text-[11px] text-center px-1 w-[52px]"
+                                    className="h-6 text-[11px] text-center px-1 w-[60px]"
                                   />
                                   <Input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     placeholder="Min"
-                                    min={1}
                                     value={displayMinNights}
                                     onChange={(e) =>
-                                      handlePriceChange(roomType.id, dateStr, 'minNights', e.target.value)
+                                      handlePriceChange(roomType.id, dateStr, 'minNights', e.target.value.replace(/[^0-9]/g, ''))
                                     }
-                                    className="h-6 text-[11px] text-center px-1 w-[52px]"
+                                    className="h-6 text-[11px] text-center px-1 w-[60px]"
                                   />
                                   <Input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     placeholder="Db"
-                                    min={0}
-                                    max={99}
                                     value={displayAvail}
                                     onChange={(e) =>
-                                      handleAvailabilityChange(roomType.id, dateStr, e.target.value)
+                                      handleAvailabilityChange(roomType.id, dateStr, e.target.value.replace(/[^0-9]/g, ''))
                                     }
                                     className={cn(
-                                      "h-6 text-[11px] text-center px-1 w-[52px]",
+                                      "h-6 text-[11px] text-center px-1 w-[60px]",
                                       isUnavailable && "border-destructive text-destructive"
                                     )}
                                     title="Elérhető szobák száma"
