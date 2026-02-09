@@ -20,6 +20,7 @@ interface RoomType {
   name: string;
   description: string | null;
   capacity: number;
+  base_capacity: number;
   base_price: number;
   amenities: string[];
 }
@@ -171,14 +172,22 @@ export default function BookingPage() {
 
     days.forEach((day) => {
       const nightlyRate = getPriceForDate(day);
-      // Base room price (covers base occupancy, e.g. 2 adults)
+      // Base room price (covers base occupancy)
       total += nightlyRate;
-      // Children pay discounted price
+      // Children: free slots fill base_capacity first, extras pay discounted per-person rate
+      const freeChildSlots = Math.max(0, (roomType?.base_capacity ?? 2) - adults);
+      let remainingFreeSlots = freeChildSlots;
       children.forEach(child => {
         if (child.count <= 0) return;
-        const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
-        const discountPercent = bracket?.discount_percent ?? 0;
-        total += nightlyRate * (1 - discountPercent / 100) * child.count;
+        const absorbed = Math.min(remainingFreeSlots, child.count);
+        const paidCount = child.count - absorbed;
+        remainingFreeSlots -= absorbed;
+        if (paidCount > 0) {
+          const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
+          const discountPercent = bracket?.discount_percent ?? 0;
+          const perPersonRate = nightlyRate / (roomType?.base_capacity ?? 2);
+          total += perPersonRate * (1 - discountPercent / 100) * paidCount;
+        }
       });
     });
 
