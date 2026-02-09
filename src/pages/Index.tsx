@@ -56,12 +56,15 @@ export default function Index() {
   const [roomTypeImages, setRoomTypeImages] = useState<Record<string, RoomTypeImage[]>>({});
   const [propertyImages, setPropertyImages] = useState<PropertyImage[]>([]);
   const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
+  const [nightDiscounts, setNightDiscounts] = useState<{ min_nights: number; discount_percent: number }[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Search state
   const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
   const [availableRoomTypes, setAvailableRoomTypes] = useState<RoomType[]>([]);
   const [totalPrices, setTotalPrices] = useState<Record<string, number>>({});
+  const [originalPrices, setOriginalPrices] = useState<Record<string, number>>({});
+  const [discountPercent, setDiscountPercent] = useState(0);
   const [nights, setNights] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState(10);
@@ -99,9 +102,16 @@ export default function Index() {
         .select('*')
         .order('sort_order');
 
+      // Fetch night discounts
+      const { data: nightDiscountsData } = await supabase
+        .from('night_discounts')
+        .select('min_nights, discount_percent')
+        .order('min_nights');
+
       setProperty(propertyData);
       setPropertyImages(propImagesData || []);
       setChildAgeBrackets(bracketsData || []);
+      setNightDiscounts(nightDiscountsData || []);
       
       const transformed: RoomType[] = (roomTypesData || []).map(rt => ({
         ...rt,
@@ -260,7 +270,23 @@ export default function Index() {
       calculatedPrices[rt.id] = total;
     });
 
-    setTotalPrices(calculatedPrices);
+    // Apply night discount
+    const applicableDiscount = nightDiscounts
+      .filter(d => stayDates.length >= d.min_nights)
+      .sort((a, b) => b.min_nights - a.min_nights)[0];
+
+    const dp = applicableDiscount?.discount_percent ?? 0;
+    setDiscountPercent(dp);
+
+    const discountedPrices: Record<string, number> = {};
+    if (dp > 0) {
+      Object.entries(calculatedPrices).forEach(([id, price]) => {
+        discountedPrices[id] = Math.round(price * (1 - dp / 100));
+      });
+    }
+
+    setOriginalPrices(dp > 0 ? calculatedPrices : {});
+    setTotalPrices(dp > 0 ? discountedPrices : calculatedPrices);
     setNights(stayDates.length);
     setAvailableRoomTypes(sorted);
     setIsSearching(false);
@@ -347,6 +373,8 @@ export default function Index() {
                     adults={searchParams.adults}
                     children={searchParams.children}
                     totalPrice={totalPrices[roomType.id]}
+                    originalPrice={originalPrices[roomType.id]}
+                    discountPercent={discountPercent}
                     nights={nights}
                   />
                 ))}
