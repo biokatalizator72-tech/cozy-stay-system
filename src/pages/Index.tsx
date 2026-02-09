@@ -6,7 +6,7 @@ import { RoomCard } from '@/components/guest/RoomCard';
 import { PropertyHero } from '@/components/guest/PropertyHero';
 import { SearchForm, ChildAgeBracket, GuestCounts } from '@/components/guest/SearchForm';
 import { MapPin, Phone, Mail, Loader2 } from 'lucide-react';
-import { format, eachDayOfInterval, addDays, parseISO } from 'date-fns';
+import { format, eachDayOfInterval, addDays } from 'date-fns';
 
 interface PropertySettings {
   id: string;
@@ -19,20 +19,19 @@ interface PropertySettings {
   longitude: number | null;
 }
 
-interface Room {
+interface RoomType {
   id: string;
   name: string;
   description: string | null;
   capacity: number;
   base_price: number;
-  min_nights: number;
   amenities: string[];
   sort_order: number;
 }
 
-interface RoomImage {
+interface RoomTypeImage {
   id: string;
-  room_id: string;
+  room_type_id: string;
   image_url: string;
   sort_order: number;
 }
@@ -52,15 +51,15 @@ interface SearchParams {
 
 export default function Index() {
   const [property, setProperty] = useState<PropertySettings | null>(null);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomImages, setRoomImages] = useState<Record<string, RoomImage[]>>({});
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  const [roomTypeImages, setRoomTypeImages] = useState<Record<string, RoomTypeImage[]>>({});
   const [propertyImages, setPropertyImages] = useState<PropertyImage[]>([]);
   const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Search state
   const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
-  const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  const [availableRoomTypes, setAvailableRoomTypes] = useState<RoomType[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState(10);
 
@@ -78,16 +77,16 @@ export default function Index() {
         .select('*')
         .order('sort_order');
 
-      // Fetch active rooms
-      const { data: roomsData } = await supabase
-        .from('rooms')
+      // Fetch active room types
+      const { data: roomTypesData } = await supabase
+        .from('room_types')
         .select('*')
         .eq('is_active', true)
         .order('sort_order');
 
-      // Fetch room images
-      const { data: roomImagesData } = await supabase
-        .from('room_images')
+      // Fetch room type images
+      const { data: roomTypeImagesData } = await supabase
+        .from('room_type_images')
         .select('*')
         .order('sort_order');
 
@@ -101,28 +100,28 @@ export default function Index() {
       setPropertyImages(propImagesData || []);
       setChildAgeBrackets(bracketsData || []);
       
-      const transformedRooms: Room[] = (roomsData || []).map(room => ({
-        ...room,
-        amenities: Array.isArray(room.amenities) 
-          ? (room.amenities as unknown[]).map(a => String(a))
+      const transformed: RoomType[] = (roomTypesData || []).map(rt => ({
+        ...rt,
+        amenities: Array.isArray(rt.amenities) 
+          ? (rt.amenities as unknown[]).map(a => String(a))
           : [],
       }));
-      setRooms(transformedRooms);
+      setRoomTypes(transformed);
 
-      // Calculate max capacity from rooms
-      if (transformedRooms.length > 0) {
-        const max = Math.max(...transformedRooms.map(r => r.capacity));
+      // Calculate max capacity from room types
+      if (transformed.length > 0) {
+        const max = Math.max(...transformed.map(r => r.capacity));
         setMaxCapacity(max);
       }
 
-      const imagesByRoom: Record<string, RoomImage[]> = {};
-      roomImagesData?.forEach((img) => {
-        if (!imagesByRoom[img.room_id]) {
-          imagesByRoom[img.room_id] = [];
+      const imagesByType: Record<string, RoomTypeImage[]> = {};
+      roomTypeImagesData?.forEach((img) => {
+        if (!imagesByType[img.room_type_id]) {
+          imagesByType[img.room_type_id] = [];
         }
-        imagesByRoom[img.room_id].push(img);
+        imagesByType[img.room_type_id].push(img);
       });
-      setRoomImages(imagesByRoom);
+      setRoomTypeImages(imagesByType);
 
       setLoading(false);
     }
@@ -153,52 +152,62 @@ export default function Index() {
       end: addDays(checkOut, -1),
     }).map(d => format(d, 'yyyy-MM-dd'));
 
-    // Fetch bookings that overlap with the selected dates
+    // Fetch room_type_availability for the date range
+    const { data: availabilityData } = await supabase
+      .from('room_type_availability')
+      .select('room_type_id, date, available_count')
+      .gte('date', checkInStr)
+      .lte('date', format(addDays(checkOut, -1), 'yyyy-MM-dd'));
+
+    // Fetch bookings that overlap with the selected dates (by room_type_id)
     const { data: bookingsData } = await supabase
       .from('bookings')
-      .select('room_id, check_in, check_out')
+      .select('room_type_id, check_in, check_out')
       .in('status', ['pending', 'confirmed'])
+      .not('room_type_id', 'is', null)
       .lte('check_in', checkOutStr)
       .gte('check_out', checkInStr);
 
-    // Fetch blocked dates
-    const { data: blockedData } = await supabase
-      .from('ical_blocked_dates')
-      .select('room_id, blocked_date')
-      .gte('blocked_date', checkInStr)
-      .lte('blocked_date', checkOutStr);
+    // Build availability map: room_type_id -> date -> available_count
+    const availMap: Record<string, Record<string, number>> = {};
+    availabilityData?.forEach((row) => {
+      if (!availMap[row.room_type_id]) {
+        availMap[row.room_type_id] = {};
+      }
+      availMap[row.room_type_id][row.date] = row.available_count;
+    });
 
-    // Find rooms with bookings in the selected period
-    const bookedRoomIds = new Set<string>();
-    
+    // Build booking count map: room_type_id -> date -> booked_count
+    const bookingCountMap: Record<string, Record<string, number>> = {};
     bookingsData?.forEach((booking) => {
-      if (booking.room_id) {
-        const bookingStart = parseISO(booking.check_in);
-        const bookingEnd = parseISO(booking.check_out);
-        
-        // Check if any stay date overlaps with this booking
-        const hasOverlap = stayDates.some((dateStr) => {
-          const date = parseISO(dateStr);
-          return date >= bookingStart && date < bookingEnd;
-        });
-        
-        if (hasOverlap) {
-          bookedRoomIds.add(booking.room_id);
+      if (!booking.room_type_id) return;
+      const bookingStart = new Date(booking.check_in);
+      const bookingEnd = new Date(booking.check_out);
+      
+      stayDates.forEach((dateStr) => {
+        const date = new Date(dateStr);
+        if (date >= bookingStart && date < bookingEnd) {
+          if (!bookingCountMap[booking.room_type_id!]) {
+            bookingCountMap[booking.room_type_id!] = {};
+          }
+          bookingCountMap[booking.room_type_id!][dateStr] = 
+            (bookingCountMap[booking.room_type_id!][dateStr] || 0) + 1;
         }
-      }
+      });
     });
 
-    // Find rooms with blocked dates
-    blockedData?.forEach((blocked) => {
-      if (stayDates.includes(blocked.blocked_date)) {
-        bookedRoomIds.add(blocked.room_id);
-      }
-    });
+    // Filter room types: capacity >= totalGuests AND available on ALL stay dates
+    const filtered = roomTypes.filter((rt) => {
+      if (rt.capacity < totalGuests) return false;
 
-    // Filter rooms: capacity >= total guests AND not booked
-    const filtered = rooms.filter(
-      (room) => room.capacity >= totalGuests && !bookedRoomIds.has(room.id)
-    );
+      // Check every stay date
+      return stayDates.every((dateStr) => {
+        const adminCount = availMap[rt.id]?.[dateStr] ?? 0;
+        const bookedCount = bookingCountMap[rt.id]?.[dateStr] ?? 0;
+        const free = adminCount - bookedCount;
+        return free >= 1;
+      });
+    });
 
     // Sort: exact capacity match first, then by capacity difference, then by sort_order
     const sorted = [...filtered].sort((a, b) => {
@@ -211,7 +220,7 @@ export default function Index() {
       return a.sort_order - b.sort_order;
     });
 
-    setAvailableRooms(sorted);
+    setAvailableRoomTypes(sorted);
     setIsSearching(false);
   };
 
@@ -261,7 +270,7 @@ export default function Index() {
         </div>
       </section>
 
-      {/* Rooms Section - only show after search */}
+      {/* Room Types Section - only show after search */}
       {searchParams && (
         <section className="py-8 lg:py-16">
           <div className="container">
@@ -278,18 +287,18 @@ export default function Index() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : availableRooms.length === 0 ? (
+            ) : availableRoomTypes.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <p className="text-lg mb-2">Sajnos nincs szabad szoba a megadott feltételekkel.</p>
                 <p>Próbáljon más dátumot vagy kevesebb vendéget.</p>
               </div>
             ) : (
               <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                {availableRooms.map((room, index) => (
+                {availableRoomTypes.map((roomType, index) => (
                   <RoomCard
-                    key={room.id}
-                    room={room}
-                    images={roomImages[room.id] || []}
+                    key={roomType.id}
+                    room={roomType}
+                    images={roomTypeImages[roomType.id] || []}
                     index={index}
                     checkIn={searchParams.checkIn}
                     checkOut={searchParams.checkOut}
