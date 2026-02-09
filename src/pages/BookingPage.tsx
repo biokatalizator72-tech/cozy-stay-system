@@ -41,6 +41,18 @@ type DateRange = {
   to?: Date;
 };
 
+interface ChildCount {
+  bracketId: string;
+  count: number;
+}
+
+interface ChildAgeBracket {
+  id: string;
+  from_age: number;
+  to_age: number;
+  discount_percent: number;
+}
+
 export default function BookingPage() {
   const { roomTypeId } = useParams();
   const navigate = useNavigate();
@@ -48,14 +60,20 @@ export default function BookingPage() {
   const [roomType, setRoomType] = useState<RoomType | null>(null);
   const [images, setImages] = useState<RoomTypeImage[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [currentImage, setCurrentImage] = useState(0);
 
-  // Parse query params for pre-filled dates
+  // Parse query params for pre-filled dates and guests
   const checkInParam = searchParams.get('checkIn');
   const checkOutParam = searchParams.get('checkOut');
+  const adultsParam = searchParams.get('adults');
+  const childrenParam = searchParams.get('children');
+
+  const adults = adultsParam ? parseInt(adultsParam, 10) : 1;
+  const children: ChildCount[] = childrenParam ? JSON.parse(childrenParam) : [];
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     if (checkInParam && checkOutParam) {
@@ -105,6 +123,12 @@ export default function BookingPage() {
         .select('start_date, end_date, price_per_night, min_nights')
         .eq('room_type_id', roomTypeId);
 
+      // Fetch child age brackets
+      const { data: bracketsData } = await supabase
+        .from('child_age_brackets')
+        .select('*')
+        .order('sort_order');
+
       const transformed: RoomType = {
         ...roomTypeData,
         amenities: Array.isArray(roomTypeData.amenities)
@@ -115,6 +139,7 @@ export default function BookingPage() {
       setRoomType(transformed);
       setImages(imagesData || []);
       setPricingRules(rulesData || []);
+      setChildAgeBrackets(bracketsData || []);
       setLoading(false);
     }
 
@@ -135,8 +160,8 @@ export default function BookingPage() {
   const calculateTotal = (): { nights: number; total: number } => {
     if (!dateRange?.from || !dateRange?.to) return { nights: 0, total: 0 };
 
-    const nights = differenceInDays(dateRange.to, dateRange.from);
-    if (nights <= 0) return { nights: 0, total: 0 };
+    const nightCount = differenceInDays(dateRange.to, dateRange.from);
+    if (nightCount <= 0) return { nights: 0, total: 0 };
 
     let total = 0;
     const days = eachDayOfInterval({
@@ -145,10 +170,19 @@ export default function BookingPage() {
     });
 
     days.forEach((day) => {
-      total += getPriceForDate(day);
+      const nightlyRate = getPriceForDate(day);
+      // Adults pay full price
+      total += nightlyRate * adults;
+      // Children pay discounted price
+      children.forEach(child => {
+        if (child.count <= 0) return;
+        const bracket = childAgeBrackets.find(b => b.id === child.bracketId);
+        const discountPercent = bracket?.discount_percent ?? 0;
+        total += nightlyRate * (1 - discountPercent / 100) * child.count;
+      });
     });
 
-    return { nights, total };
+    return { nights: nightCount, total };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
