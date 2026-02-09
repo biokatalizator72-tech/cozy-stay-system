@@ -60,6 +60,8 @@ export default function Index() {
   // Search state
   const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
   const [availableRoomTypes, setAvailableRoomTypes] = useState<RoomType[]>([]);
+  const [totalPrices, setTotalPrices] = useState<Record<string, number>>({});
+  const [nights, setNights] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState(10);
 
@@ -147,10 +149,11 @@ export default function Index() {
     const checkOutStr = format(checkOut, 'yyyy-MM-dd');
 
     // Get all dates in the range (excluding checkout day)
-    const stayDates = eachDayOfInterval({
+    const stayDatesInterval = eachDayOfInterval({
       start: checkIn,
       end: addDays(checkOut, -1),
-    }).map(d => format(d, 'yyyy-MM-dd'));
+    });
+    const stayDates = stayDatesInterval.map(d => format(d, 'yyyy-MM-dd'));
 
     // Fetch room_type_availability for the date range
     const { data: availabilityData } = await supabase
@@ -220,6 +223,27 @@ export default function Index() {
       return a.sort_order - b.sort_order;
     });
 
+    // Fetch pricing rules for total price calculation
+    const roomTypeIds = sorted.map(rt => rt.id);
+    const { data: pricingRules } = await supabase
+      .from('pricing_rules')
+      .select('room_type_id, start_date, end_date, price_per_night')
+      .in('room_type_id', roomTypeIds);
+
+    const calculatedPrices: Record<string, number> = {};
+    sorted.forEach(rt => {
+      let total = 0;
+      stayDates.forEach(dateStr => {
+        const rule = pricingRules?.find(r =>
+          r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
+        );
+        total += rule ? Number(rule.price_per_night) : rt.base_price;
+      });
+      calculatedPrices[rt.id] = total;
+    });
+
+    setTotalPrices(calculatedPrices);
+    setNights(stayDates.length);
     setAvailableRoomTypes(sorted);
     setIsSearching(false);
   };
@@ -304,6 +328,8 @@ export default function Index() {
                     checkOut={searchParams.checkOut}
                     adults={searchParams.adults}
                     children={searchParams.children}
+                    totalPrice={totalPrices[roomType.id]}
+                    nights={nights}
                   />
                 ))}
               </div>
