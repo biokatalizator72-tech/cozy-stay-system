@@ -35,6 +35,7 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
   const [childCounts, setChildCounts] = useState<Record<string, number>>({});
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [checkOutOpen, setCheckOutOpen] = useState(false);
+  const [checkOutMonth, setCheckOutMonth] = useState<Date | undefined>();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -97,6 +98,9 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
                 onSelect={(date) => {
                   setCheckIn(date);
                   setCheckInOpen(false);
+                  if (date) {
+                    setCheckOutMonth(date);
+                  }
                   if (date && checkOut && checkOut <= date) setCheckOut(undefined);
                 }}
                 disabled={(date) => date < today}
@@ -122,6 +126,8 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
               <Calendar
                 mode="single"
                 selected={checkOut}
+                month={checkOutMonth}
+                onMonthChange={setCheckOutMonth}
                 onSelect={(date) => {
                   setCheckOut(date);
                   setCheckOutOpen(false);
