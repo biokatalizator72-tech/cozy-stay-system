@@ -1,46 +1,30 @@
 
-# Hero szekció javitasok
 
-## 1. "Szobáink megtekintese" gomb torlese
+# Automatikus gorgetés a keresési eredményekhez
 
-A `PropertyHero.tsx` komponensbol torlom a teljes gomb blokkot (56-60. sor):
+## Mi valtozik
 
-```tsx
-<div className="mt-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-  <Button size="lg" variant="secondary" ...>
-    Szobáink megtekintése
-  </Button>
-</div>
+A "Keresés" gombra kattintás után az oldal automatikusan legörget az eredmények szekcióhoz, hogy a vendég azonnal lássa a találatokat (vagy az "nincs szabad szoba" üzenetet).
+
+## Megvalósítás
+
+### `src/pages/Index.tsx`
+
+1. Importálom a `useRef`-et a React-ből
+2. Létrehozok egy `resultsRef`-et (`useRef<HTMLDivElement>`)
+3. Az eredmények szekció `<section>` elemére rárakom a `ref={resultsRef}` attribútumot
+4. A `handleSearch` függvény végén (miután az `setAvailableRoomTypes` és `setIsSearching(false)` lefutott) egy rövid `setTimeout`-tal görgetem az eredményekhez:
+
+```typescript
+setTimeout(() => {
+  resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}, 100);
 ```
 
-A `Button` import is eltavolithato, ha a navigacios gombok (ChevronLeft/Right) nem hasznaljak -- de azok igen, tehat a `Button` import marad.
+A `setTimeout` azért kell, mert a React renderelésnek be kell fejeződnie, mielőtt a DOM elem elérhető lenne a görgetéshez.
 
-## 2. Hatterkep blur/fako megjelenes eltavolitasa
+## Érintett fájl
 
-A jelenlegi kep `mix-blend-overlay opacity-30` osztalyokat hasznal, ami nagyon fakova teszi. Ezt lecserelem, hogy a kep eletesebben latszodjon:
-
-**Jelenleg (33. sor):**
-```
-className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-30"
-```
-
-**Javitva:**
-```
-className="absolute inset-0 w-full h-full object-cover"
-```
-
-A gradient overlay (35. sor) megmarad, hogy a szoveg olvashato legyen a kep felett.
-
-## 3. Hero kep optimalis merete
-
-Ez nem kod-valtozas, csak informacio:
-- **Ajanlott meret:** 1920 x 1080 px (16:9)
-- **Retina:** 2560 x 1440 px
-- **Formatum:** JPEG, 80-85% minoseg
-- **Fajlmeret:** max 300-500 KB
-
-## Erintett fajl
-
-| Fajl | Valtozas |
+| Fájl | Változás |
 |------|----------|
-| `src/components/guest/PropertyHero.tsx` | Gomb torlese + kep opacity/blend eltavolitasa |
+| `src/pages/Index.tsx` | `useRef` + `scrollIntoView` hozzáadása a keresés utáni görgetéshez |
