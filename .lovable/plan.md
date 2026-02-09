@@ -1,30 +1,47 @@
 
 
-# Automatikus gorgetés a keresési eredményekhez
+# Naptár szinkronizálás: távozás mező az érkezés hónapjától induljon
 
-## Mi valtozik
+## Probléma
 
-A "Keresés" gombra kattintás után az oldal automatikusan legörget az eredmények szekcióhoz, hogy a vendég azonnal lássa a találatokat (vagy az "nincs szabad szoba" üzenetet).
+Ha a vendég az érkezés mezőben pl. augusztust választ, a távozás naptár újra januártól/februártól indul, és végig kell lapozni.
 
-## Megvalósítás
+## Megoldás
 
-### `src/pages/Index.tsx`
+A `SearchForm.tsx` komponensben a távozás (check-out) `Calendar`-nak átadom a `month` és `onMonthChange` prop-okat, hogy a kiválasztott check-in dátum hónapjától induljon.
 
-1. Importálom a `useRef`-et a React-ből
-2. Létrehozok egy `resultsRef`-et (`useRef<HTMLDivElement>`)
-3. Az eredmények szekció `<section>` elemére rárakom a `ref={resultsRef}` attribútumot
-4. A `handleSearch` függvény végén (miután az `setAvailableRoomTypes` és `setIsSearching(false)` lefutott) egy rövid `setTimeout`-tal görgetem az eredményekhez:
+### `src/components/guest/SearchForm.tsx`
 
-```typescript
-setTimeout(() => {
-  resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}, 100);
+1. Új state: `checkOutMonth` (Date | undefined)
+2. Amikor a check-in dátumot kiválasztják, beállítom a `checkOutMonth`-ot is arra a hónapra
+3. A check-out `Calendar` komponensnek átadom: `month={checkOutMonth}` és `onMonthChange={setCheckOutMonth}`
+
+```tsx
+const [checkOutMonth, setCheckOutMonth] = useState<Date | undefined>();
+
+// Check-in onSelect-ben:
+onSelect={(date) => {
+  setCheckIn(date);
+  setCheckInOpen(false);
+  if (date) {
+    setCheckOutMonth(date);  // <-- új sor
+  }
+  if (date && checkOut && checkOut <= date) setCheckOut(undefined);
+}}
+
+// Check-out Calendar-ban:
+<Calendar
+  mode="single"
+  selected={checkOut}
+  month={checkOutMonth}
+  onMonthChange={setCheckOutMonth}
+  ...
+/>
 ```
-
-A `setTimeout` azért kell, mert a React renderelésnek be kell fejeződnie, mielőtt a DOM elem elérhető lenne a görgetéshez.
 
 ## Érintett fájl
 
 | Fájl | Változás |
 |------|----------|
-| `src/pages/Index.tsx` | `useRef` + `scrollIntoView` hozzáadása a keresés utáni görgetéshez |
+| `src/components/guest/SearchForm.tsx` | `checkOutMonth` state + naptár hónap szinkronizálás |
+
