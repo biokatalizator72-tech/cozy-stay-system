@@ -1,148 +1,212 @@
 
-# Vendégoldali szobakeresés átalakítása
 
-## Jelenlegi helyzet
+# Kedvezmenyek beallitasa az Admin feluleten
 
-Jelenleg a főoldalon (`Index.tsx`) az összes aktív szoba azonnal megjelenik. A vendég ezután választ szobát, és csak a foglalási oldalon (`BookingPage.tsx`) választja ki a dátumot.
+## Osszefoglalo
 
-## Új folyamat
+Ket tipus kedvezmenyt vezetunk be:
+1. **Ejszakak szamatol fuggo kedvezmenyek** - automatikusan alkalmazodik a tartozkodas hossza alapjan
+2. **Kulonleges kedvezmenyek** - elofoglalasi, torzsvendeg stb., amit az admin valaszthat ki a foglalashoz
 
-A vendég először megadja a keresési feltételeket (dátum + létszám), majd csak ezután jelennek meg a releváns, szabad szobák.
+## Uj adatbazis tablak
 
-```text
-+-------------------------------------------+
-|            Szálláshely Hero               |
-+-------------------------------------------+
-                    |
-                    v
-+-------------------------------------------+
-|          Keresési Űrlap (új)              |
-|  +----------------+  +------------------+ |
-|  | Érkezés dátum  |  | Távozás dátum    | |
-|  +----------------+  +------------------+ |
-|  +----------------+  +------------------+ |
-|  | Vendégek száma |  |     [Keresés]    | |
-|  +----------------+  +------------------+ |
-+-------------------------------------------+
-                    |
-         (keresés megnyomása után)
-                    v
-+-------------------------------------------+
-|     Szabad szobák listája (szűrt)         |
-|  - Létszámnak megfelelők előre            |
-|  - Foglalt szobák kiszűrve                |
-+-------------------------------------------+
-```
+### 1. `night_discounts` - Ejszakak szamatol fuggo kedvezmenyek
 
-## Részletes megvalósítás
+| Mezo | Tipus | Leiras |
+|------|-------|--------|
+| id | uuid | Elsodleges kulcs |
+| min_nights | integer | Minimum ejszakak szama (pl. 3) |
+| discount_percent | integer | Kedvezmeny % (pl. 5) |
+| sort_order | integer | Rendezesi sorrend |
+| created_at | timestamp | Letrehozas ideje |
 
-### 1. Új komponens: `SearchForm.tsx`
+Pelda adatok:
+- 3 ejszakatol: 5%
+- 6 ejszakatol: 10%
+- 10 ejszakatol: 15%
 
-Létrehozok egy keresési űrlap komponenst:
+### 2. `special_discounts` - Kulonleges kedvezmenyek
 
-- **Érkezés dátum** - Popover naptárral
-- **Távozás dátum** - Popover naptárral
-- **Vendégek száma** - Számláló input (1-tól a legnagyobb szoba kapacitásáig)
-- **Keresés gomb**
+| Mezo | Tipus | Leiras |
+|------|-------|--------|
+| id | uuid | Elsodleges kulcs |
+| name | text | Kedvezmeny neve (pl. "Elofoglalasi kedvezmeny") |
+| discount_percent | integer | Kedvezmeny % (pl. 10) |
+| is_active | boolean | Aktiv-e (megjelenitendo-e) |
+| sort_order | integer | Rendezesi sorrend |
+| created_at | timestamp | Letrehozas ideje |
 
-A naptár magyar nyelven, a dátumok a mai naptól választhatók.
+Pelda kedvezmenyek:
+- Elofoglalasi kedvezmeny: 10%
+- Torzsvendeg kedvezmeny: 15%
+- Csaladbarat kedvezmeny: 5%
 
-### 2. Főoldal (`Index.tsx`) módosítása
+## Admin felulet
 
-Az oldal állapotai:
-- `searchParams: { checkIn, checkOut, guests }` - null, amíg nincs keresés
-- `availableRooms: Room[]` - szűrt szobalista
+### Uj menupont: "Kedvezmenyek" (/admin/discounts)
 
-Működési logika:
-1. Kezdetben csak a Hero + SearchForm látszik
-2. Keresés után:
-   - Lekérdezés a `bookings` és `ical_blocked_dates` táblákból a foglalt dátumokra
-   - Szűrés: csak azok a szobák jelennek meg, amelyek szabadok az adott időszakban
-   - Rendezés: a létszámnak leginkább megfelelő szobák előre (pl. 2 fő → 2 férőhelyes szobák előre, majd 3, 4, stb.)
-
-### 3. Szűrési algoritmus
+Az oldal ket szekciot tartalmaz:
 
 ```text
-1. Lekérdezem az összes aktív szobát
-2. Lekérdezem a foglalásokat a választott időszakra:
-   - bookings tábla: pending és confirmed státuszúak
-   - ical_blocked_dates tábla: manuálisan blokkolt napok
-3. Kiszűröm azokat a szobákat, amelyek:
-   - Kapacitása >= megadott létszám
-   - Nincs foglalásuk a választott időszakban
-4. Rendezés:
-   - Elsődleges: kapacitás közelsége a kért létszámhoz (pontos egyezés előnyben)
-   - Másodlagos: eredeti sorrend (sort_order)
++--------------------------------------------------+
+|  KEDVEZMENYEK BEALLITASA                         |
++--------------------------------------------------+
+|                                                  |
+|  [1] Ejszakak szama szerinti kedvezmenyek        |
+|  +--------------------------------------------+  |
+|  |  Min. ejszaka   |   Kedvezmeny %           |  |
+|  |  [  3  ]        |   [  5  ] %              |  |
+|  |  [  6  ]        |   [ 10  ] %              |  |
+|  |  [  10 ]        |   [ 15  ] %              |  |
+|  |                                            |  |
+|  |  [+ Uj sav hozzaadasa]                     |  |
+|  +--------------------------------------------+  |
+|                                                  |
+|  [2] Kulonleges kedvezmenyek                     |
+|  +--------------------------------------------+  |
+|  |  Nev                    | Kedvezmeny % |Aktiv|
+|  |  Elofoglalasi kedvezmeny|   [ 10 ] %  | [x] |  |
+|  |  Torzsvendeg kedvezmeny |   [ 15 ] %  | [x] |  |
+|  |                                            |  |
+|  |  [+ Uj kedvezmeny felvitele]               |  |
+|  +--------------------------------------------+  |
+|                                                  |
++--------------------------------------------------+
 ```
 
-### 4. RoomCard módosítása
-
-A `RoomCard` komponens kap új prop-okat:
-- `checkIn`, `checkOut` - a keresési dátumok
-- `guests` - a vendégek száma
-- `calculatedPrice` - előre kiszámolt végösszeg
-
-A "Foglalás" gomb URL-je query paramétereket is tartalmazhat:
-`/book/{roomId}?checkIn=2025-03-01&checkOut=2025-03-05&guests=2`
-
-### 5. BookingPage módosítása
-
-Ha query paraméterek érkeznek:
-- A naptár előre ki lesz töltve
-- A létszám megjelenik
-- A vendégnek már csak az adatait kell megadnia
-
----
-
-## Technikai részletek
-
-### Érintett fájlok
-
-| Fájl | Művelet |
-|------|---------|
-| `src/components/guest/SearchForm.tsx` | Létrehozás |
-| `src/pages/Index.tsx` | Módosítás |
-| `src/components/guest/RoomCard.tsx` | Módosítás |
-| `src/pages/BookingPage.tsx` | Módosítás |
-
-### SearchForm komponens szerkezete
+### Uj kedvezmeny felvitele dialog
 
 ```text
-<Card>
-  <CardContent>
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <!-- Érkezés dátum: Popover + Calendar -->
-      <!-- Távozás dátum: Popover + Calendar -->
-      <!-- Vendégek száma: Input type="number" -->
-      <!-- Keresés gomb -->
-    </div>
-  </CardContent>
-</Card>
++-----------------------------------+
+|  Uj kedvezmeny felvitele          |
++-----------------------------------+
+|                                   |
+|  Kedvezmeny neve:                 |
+|  [Lenyilo: Elofoglalasi / Torzs-  |
+|   vendeg / Egyeb...]              |
+|                                   |
+|  vagy Egyedi nev:                 |
+|  [____________________________]   |
+|                                   |
+|  Kedvezmeny merteke:              |
+|  [Lenyilo: 5% / 10% / 15% ...]    |
+|                                   |
+|  [Mentes]                         |
++-----------------------------------+
 ```
 
-### Szobák szűrése és rendezése (pszeudo-kód)
+## Arszamitas logika
 
+A kedvezmenyeket a kovetkezo sorrendben alkalmazzuk:
+
+1. **Alapar szamitas**: ejszakak * napi ar
+2. **Ejszaka kedvezmeny alkalmazasa**: ha tobb ejszakat foglal, mint a beallitott minimum
+3. **Kulonleges kedvezmeny alkalmazasa**: ha a vendeg valasztott ilyen kedvezmenyt
+
+Pelda:
+- 5 ejszaka x 20.000 Ft = 100.000 Ft alapar
+- 3+ ejszakas kedvezmeny (5%): -5.000 Ft
+- Elofoglalasi kedvezmeny (10%): -9.500 Ft
+- **Vegosszeg: 85.500 Ft**
+
+## Technikai reszletek
+
+### Uj fajlok
+
+| Fajl | Leiras |
+|------|--------|
+| src/pages/admin/AdminDiscounts.tsx | Kedvezmenyek kezelese oldal |
+| src/pages/admin/DiscountsRoute.tsx | Auth wrapper |
+
+### Modositando fajlok
+
+| Fajl | Modositas |
+|------|-----------|
+| src/components/admin/AdminLayout.tsx | Uj "Kedvezmenyek" menupont hozzaadasa (Percent ikon) |
+| src/App.tsx | Uj route: /admin/discounts |
+| src/pages/BookingPage.tsx | Ejszaka kedvezmeny automatikus alkalmazasa + opcionalis kulonleges kedvezmeny valasztas |
+| src/pages/Index.tsx | Kedvezmenyek megjelenitese a szobakartyan |
+
+### Adatbazis migraciok
+
+```sql
+-- Ejszaka kedvezmenyek tabla
+create table public.night_discounts (
+  id uuid primary key default gen_random_uuid(),
+  min_nights integer not null,
+  discount_percent integer not null default 0,
+  sort_order integer not null default 0,
+  created_at timestamp with time zone not null default now()
+);
+
+alter table public.night_discounts enable row level security;
+
+-- Mindenki olvashatja
+create policy "Anyone can view night discounts"
+  on public.night_discounts for select
+  using (true);
+
+-- Admin kezelheti
+create policy "Admins can manage night discounts"
+  on public.night_discounts for all
+  using (public.has_role(auth.uid(), 'admin'))
+  with check (public.has_role(auth.uid(), 'admin'));
+
+-- Kulonleges kedvezmenyek tabla
+create table public.special_discounts (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  discount_percent integer not null default 0,
+  is_active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamp with time zone not null default now()
+);
+
+alter table public.special_discounts enable row level security;
+
+-- Mindenki olvashatja
+create policy "Anyone can view special discounts"
+  on public.special_discounts for select
+  using (true);
+
+-- Admin kezelheti
+create policy "Admins can manage special discounts"
+  on public.special_discounts for all
+  using (public.has_role(auth.uid(), 'admin'))
+  with check (public.has_role(auth.uid(), 'admin'));
+```
+
+### RLS szabalyok
+
+- `night_discounts`: Mindenki olvashat, admin CRUD
+- `special_discounts`: Mindenki olvashat, admin CRUD
+
+### Vendegoldali valtozasok
+
+A foglalasi oldalon (BookingPage.tsx):
+
+1. **Automatikus ejszaka kedvezmeny**: A rendszer automatikusan alkalmazza a legjobb kedvezmenyt a foglalt ejszakak szama alapjan
+
+2. **Kulonleges kedvezmeny valasztas**: Uj lenyilo mezo, ahol a vendeg kivalaszthatja az elerheto kedvezmenyeket (pl. elofoglalasi)
+
+3. **Ar lebontas megjelenites**:
 ```text
-function filterAndSortRooms(rooms, checkIn, checkOut, guests):
-  // 1. Kapacitás szűrés
-  filtered = rooms.filter(room => room.capacity >= guests)
-  
-  // 2. Elérhetőség ellenőrzése
-  for each room in filtered:
-    bookedDates = getBookedDates(room.id, checkIn, checkOut)
-    if bookedDates.length > 0:
-      remove room from filtered
-  
-  // 3. Rendezés: pontos kapacitás-egyezés előnyben
-  sorted = filtered.sort((a, b) => {
-    diffA = |a.capacity - guests|
-    diffB = |b.capacity - guests|
-    return diffA - diffB
-  })
-  
-  return sorted
++--------------------------------+
+|  5 ejszaka x 20.000 Ft         |
+|  Reszosszeg:        100.000 Ft |
+|  5+ ej. kedv. (-5%):  -5.000 Ft|
+|  Elofoglalasi (-10%): -9.500 Ft|
+|  --------------------------    |
+|  Vegosszeg:          85.500 Ft |
++--------------------------------+
 ```
 
-### URL paraméterek a foglalási oldalon
+### Navigacio bovites
 
-A `BookingPage` komponens a `useSearchParams` hook-kal olvassa ki a query paramétereket, és automatikusan beállítja a dátumokat.
+Az AdminLayout.tsx-ben uj menupont:
+- Nev: "Kedvezmenyek"
+- Utvonal: /admin/discounts
+- Ikon: Percent (lucide-react)
+
+A meglevo menupontok kozott az "Arazas" es "Foglalasok" kozott helyezkedik el.
+
