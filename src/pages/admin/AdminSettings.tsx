@@ -311,6 +311,8 @@ export default function AdminSettings() {
                   <label className="aspect-video border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors">
                     <Plus className="h-8 w-8 text-muted-foreground mb-2" />
                     <span className="text-sm text-muted-foreground">Kép feltöltése</span>
+                    <span className="text-xs text-muted-foreground mt-1 text-center px-2">Ajánlott: 1920×1080 px (16:9)</span>
+                    <span className="text-xs text-muted-foreground text-center px-2">Retina: 2560×1440 px</span>
                     <input
                       type="file"
                       accept="image/*"
