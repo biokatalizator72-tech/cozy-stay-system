@@ -23,16 +23,22 @@ interface RoomImage {
   sort_order: number;
 }
 
+interface ChildCount {
+  bracketId: string;
+  count: number;
+}
+
 interface RoomCardProps {
   room: Room;
   images: RoomImage[];
   index: number;
   checkIn?: Date;
   checkOut?: Date;
-  guests?: number;
+  adults?: number;
+  children?: ChildCount[];
 }
 
-export function RoomCard({ room, images, index, checkIn, checkOut, guests }: RoomCardProps) {
+export function RoomCard({ room, images, index, checkIn, checkOut, adults, children }: RoomCardProps) {
   const [currentImage, setCurrentImage] = useState(0);
   const hasImages = images.length > 0;
 
@@ -59,8 +65,11 @@ export function RoomCard({ room, images, index, checkIn, checkOut, guests }: Roo
     if (checkOut) {
       params.set('checkOut', format(checkOut, 'yyyy-MM-dd'));
     }
-    if (guests) {
-      params.set('guests', guests.toString());
+    if (adults) {
+      params.set('adults', adults.toString());
+    }
+    if (children && children.length > 0) {
+      params.set('children', JSON.stringify(children));
     }
     
     const queryString = params.toString();
