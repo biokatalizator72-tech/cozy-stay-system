@@ -129,6 +129,30 @@ export type Database = {
           },
         ]
       }
+      night_discounts: {
+        Row: {
+          created_at: string
+          discount_percent: number
+          id: string
+          min_nights: number
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          discount_percent?: number
+          id?: string
+          min_nights: number
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          discount_percent?: number
+          id?: string
+          min_nights?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
       pricing_rules: {
         Row: {
           created_at: string
@@ -310,6 +334,33 @@ export type Database = {
           name?: string
           sort_order?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      special_discounts: {
+        Row: {
+          created_at: string
+          discount_percent: number
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          discount_percent?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          discount_percent?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
         }
         Relationships: []
       }
