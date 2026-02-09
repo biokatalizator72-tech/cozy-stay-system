@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
@@ -13,35 +12,37 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Pencil, Trash2, Image, Loader2, Users, Copy } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Layers } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatPrice } from '@/lib/supabase-helpers';
+import { Badge } from '@/components/ui/badge';
 
 interface Room {
   id: string;
   name: string;
-  description: string | null;
-  capacity: number;
-  base_capacity: number;
-  extra_beds: number;
-  adult_extra_beds: number;
-  base_price: number;
-  amenities: string[];
+  room_type_id: string | null;
   is_active: boolean;
   sort_order: number;
 }
 
-interface RoomImage {
+interface RoomType {
   id: string;
-  room_id: string;
-  image_url: string;
-  sort_order: number;
+  name: string;
+  capacity: number;
+  base_price: number;
+  is_active: boolean;
 }
 
 export default function AdminRooms() {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomImages, setRoomImages] = useState<Record<string, RoomImage[]>>({});
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
@@ -49,66 +50,41 @@ export default function AdminRooms() {
 
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
-    base_capacity: 2,
-    extra_beds: 0,
-    adult_extra_beds: 0,
-    base_price: 0,
-    amenities: '',
+    room_type_id: '',
     is_active: true,
   });
 
-  const fetchRooms = async () => {
-    const { data: roomsData, error } = await supabase
-      .from('rooms')
-      .select('*')
-      .order('sort_order');
+  const fetchData = async () => {
+    const [roomsResponse, roomTypesResponse] = await Promise.all([
+      supabase.from('rooms').select('id, name, room_type_id, is_active, sort_order').order('sort_order'),
+      supabase.from('room_types').select('id, name, capacity, base_price, is_active').order('sort_order'),
+    ]);
 
-    if (error) {
+    if (roomsResponse.error) {
       toast.error('Hiba a szobák betöltésekor');
       return;
     }
 
-    const transformedRooms: Room[] = (roomsData || []).map(room => ({
-      ...room,
-      amenities: Array.isArray(room.amenities) 
-        ? (room.amenities as unknown[]).map(a => String(a))
-        : [],
-    }));
-
-    setRooms(transformedRooms);
-
-    // Fetch images for all rooms
-    const { data: imagesData } = await supabase
-      .from('room_images')
-      .select('*')
-      .order('sort_order');
-
-    const imagesByRoom: Record<string, RoomImage[]> = {};
-    imagesData?.forEach((img) => {
-      if (!imagesByRoom[img.room_id]) {
-        imagesByRoom[img.room_id] = [];
-      }
-      imagesByRoom[img.room_id].push(img);
-    });
-    setRoomImages(imagesByRoom);
+    setRooms(roomsResponse.data || []);
+    setRoomTypes(roomTypesResponse.data || []);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchRooms();
+    fetchData();
   }, []);
+
+  const getRoomTypeName = (roomTypeId: string | null) => {
+    if (!roomTypeId) return 'Nincs típus';
+    const roomType = roomTypes.find(rt => rt.id === roomTypeId);
+    return roomType?.name || 'Ismeretlen típus';
+  };
 
   const openNewRoom = () => {
     setEditingRoom(null);
     setFormData({
       name: '',
-      description: '',
-      base_capacity: 2,
-      extra_beds: 0,
-      adult_extra_beds: 0,
-      base_price: 0,
-      amenities: '',
+      room_type_id: roomTypes[0]?.id || '',
       is_active: true,
     });
     setDialogOpen(true);
@@ -118,27 +94,7 @@ export default function AdminRooms() {
     setEditingRoom(room);
     setFormData({
       name: room.name,
-      description: room.description || '',
-      base_capacity: room.base_capacity,
-      extra_beds: room.extra_beds,
-      adult_extra_beds: room.adult_extra_beds,
-      base_price: room.base_price,
-      amenities: room.amenities.join(', '),
-      is_active: room.is_active,
-    });
-    setDialogOpen(true);
-  };
-
-  const openCopyRoom = (room: Room) => {
-    setEditingRoom(null);
-    setFormData({
-      name: '',
-      description: room.description || '',
-      base_capacity: room.base_capacity,
-      extra_beds: room.extra_beds,
-      adult_extra_beds: room.adult_extra_beds,
-      base_price: room.base_price,
-      amenities: room.amenities.join(', '),
+      room_type_id: room.room_type_id || '',
       is_active: room.is_active,
     });
     setDialogOpen(true);
@@ -150,21 +106,16 @@ export default function AdminRooms() {
       return;
     }
 
+    if (!formData.room_type_id) {
+      toast.error('Válasszon szobatípust');
+      return;
+    }
+
     setSaving(true);
-    const amenitiesArray = formData.amenities
-      .split(',')
-      .map((a) => a.trim())
-      .filter(Boolean);
 
     const roomData = {
       name: formData.name,
-      description: formData.description || null,
-      capacity: formData.base_capacity + formData.extra_beds,
-      base_capacity: formData.base_capacity,
-      extra_beds: formData.extra_beds,
-      adult_extra_beds: formData.adult_extra_beds,
-      base_price: formData.base_price,
-      amenities: amenitiesArray,
+      room_type_id: formData.room_type_id,
       is_active: formData.is_active,
     };
 
@@ -179,7 +130,7 @@ export default function AdminRooms() {
       } else {
         toast.success('Szoba frissítve');
         setDialogOpen(false);
-        fetchRooms();
+        fetchData();
       }
     } else {
       const { error } = await supabase
@@ -191,7 +142,7 @@ export default function AdminRooms() {
       } else {
         toast.success('Szoba létrehozva');
         setDialogOpen(false);
-        fetchRooms();
+        fetchData();
       }
     }
 
@@ -207,53 +158,19 @@ export default function AdminRooms() {
       toast.error('Hiba a törléskor');
     } else {
       toast.success('Szoba törölve');
-      fetchRooms();
+      fetchData();
     }
   };
 
-  const handleImageUpload = async (roomId: string, file: File) => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${roomId}/${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('property-images')
-      .upload(fileName, file);
-
-    if (uploadError) {
-      toast.error('Hiba a kép feltöltésekor');
-      return;
+  // Group rooms by room type
+  const roomsByType = rooms.reduce((acc, room) => {
+    const typeId = room.room_type_id || 'no-type';
+    if (!acc[typeId]) {
+      acc[typeId] = [];
     }
-
-    const { data: publicUrl } = supabase.storage
-      .from('property-images')
-      .getPublicUrl(fileName);
-
-    const { error } = await supabase.from('room_images').insert([
-      {
-        room_id: roomId,
-        image_url: publicUrl.publicUrl,
-        sort_order: (roomImages[roomId]?.length || 0),
-      },
-    ]);
-
-    if (error) {
-      toast.error('Hiba a kép mentésekor');
-    } else {
-      toast.success('Kép feltöltve');
-      fetchRooms();
-    }
-  };
-
-  const handleDeleteImage = async (imageId: string) => {
-    const { error } = await supabase.from('room_images').delete().eq('id', imageId);
-
-    if (error) {
-      toast.error('Hiba a kép törlésekor');
-    } else {
-      toast.success('Kép törölve');
-      fetchRooms();
-    }
-  };
+    acc[typeId].push(room);
+    return acc;
+  }, {} as Record<string, Room[]>);
 
   return (
     <AdminLayout>
@@ -261,16 +178,16 @@ export default function AdminRooms() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl lg:text-3xl font-semibold">Szobák</h1>
-            <p className="text-muted-foreground mt-1">Szobák kezelése</p>
+            <p className="text-muted-foreground mt-1">Egyedi szobák kezelése (típushoz rendelve)</p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={openNewRoom}>
+              <Button onClick={openNewRoom} disabled={roomTypes.length === 0}>
                 <Plus className="mr-2 h-4 w-4" />
                 Új szoba
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="font-display">
                   {editingRoom ? 'Szoba szerkesztése' : 'Új szoba'}
@@ -285,111 +202,31 @@ export default function AdminRooms() {
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
-                    placeholder="pl. Deluxe kétágyas szoba"
+                    placeholder="pl. 101, Panoráma szoba"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="description">Leírás</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
+                  <Label htmlFor="room_type_id">Szobatípus *</Label>
+                  <Select
+                    value={formData.room_type_id}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, room_type_id: value })
                     }
-                    placeholder="Szoba leírása..."
-                    rows={3}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="base_capacity">Alaplétszám (fő)</Label>
-                    <Input
-                      id="base_capacity"
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={formData.base_capacity}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          base_capacity: parseInt(e.target.value) || 1,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="extra_beds">Max. pótágyak száma (fő)</Label>
-                    <Input
-                      id="extra_beds"
-                      type="number"
-                      min={0}
-                      max={99}
-                      value={formData.extra_beds}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          extra_beds: parseInt(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Max. létszám (fő)</Label>
-                    <Input
-                      type="number"
-                      value={formData.base_capacity + formData.extra_beds}
-                      readOnly
-                      disabled
-                      className="bg-muted"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="adult_extra_beds">Ebből felnőtt méretű (fő)</Label>
-                    <Input
-                      id="adult_extra_beds"
-                      type="number"
-                      min={0}
-                      max={formData.extra_beds}
-                      value={formData.adult_extra_beds}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          adult_extra_beds: Math.min(parseInt(e.target.value) || 0, formData.extra_beds),
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="base_price">Alapár / éj (Ft)</Label>
-                  <Input
-                    id="base_price"
-                    type="number"
-                    min={0}
-                    value={formData.base_price}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        base_price: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="amenities">Felszereltség (vesszővel elválasztva)</Label>
-                  <Input
-                    id="amenities"
-                    value={formData.amenities}
-                    onChange={(e) =>
-                      setFormData({ ...formData, amenities: e.target.value })
-                    }
-                    placeholder="WiFi, TV, Légkondicionáló, Minibar"
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Válasszon szobatípust" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roomTypes.map((rt) => (
+                        <SelectItem key={rt.id} value={rt.id}>
+                          {rt.name} ({rt.capacity} fő)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="is_active">Aktív (megjelenik a vendégoldalon)</Label>
+                  <Label htmlFor="is_active">Aktív</Label>
                   <Switch
                     id="is_active"
                     checked={formData.is_active}
@@ -417,6 +254,14 @@ export default function AdminRooms() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
+        ) : roomTypes.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">
+                Először hozzon létre szobatípusokat a "Szobatípusok" menüpontban.
+              </p>
+            </CardContent>
+          </Card>
         ) : rooms.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -426,111 +271,106 @@ export default function AdminRooms() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {rooms.map((room) => (
-              <Card key={room.id} className="overflow-hidden">
-                {/* Room images */}
-                <div className="aspect-video bg-muted relative overflow-hidden">
-                  {roomImages[room.id]?.[0] ? (
-                    <img
-                      src={roomImages[room.id][0].image_url}
-                      alt={room.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Image className="h-12 w-12 text-muted-foreground/50" />
+          <div className="space-y-6">
+            {roomTypes.map((roomType) => {
+              const typeRooms = roomsByType[roomType.id] || [];
+              if (typeRooms.length === 0) return null;
+              
+              return (
+                <Card key={roomType.id}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle className="font-display text-lg">{roomType.name}</CardTitle>
+                      <Badge variant="secondary">{typeRooms.length} szoba</Badge>
                     </div>
-                  )}
-                  {!room.is_active && (
-                    <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
-                      <span className="text-muted-foreground font-medium">Inaktív</span>
-                    </div>
-                  )}
-                </div>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="font-display text-lg">{room.name}</CardTitle>
-                    <div className="flex items-center text-muted-foreground text-sm">
-                      <Users className="h-4 w-4 mr-1" />
-                      {room.capacity}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Alapár:</span>
-                    <span className="font-medium">{formatPrice(room.base_price)} / éj</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Max. létszám:</span>
-                    <span className="font-medium">{room.capacity} fő</span>
-                  </div>
-                  
-                  {/* Image management */}
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Képek ({roomImages[room.id]?.length || 0})</Label>
-                    <div className="flex gap-2 flex-wrap">
-                      {roomImages[room.id]?.map((img) => (
-                        <div key={img.id} className="relative group w-12 h-12">
-                          <img
-                            src={img.image_url}
-                            alt=""
-                            className="w-full h-full object-cover rounded"
-                          />
-                          <button
-                            onClick={() => handleDeleteImage(img.id)}
-                            className="absolute inset-0 bg-destructive/80 text-destructive-foreground rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {typeRooms.map((room) => (
+                        <div
+                          key={room.id}
+                          className={`flex items-center justify-between p-3 rounded-lg border ${
+                            room.is_active ? 'bg-card' : 'bg-muted/50 opacity-60'
+                          }`}
+                        >
+                          <div>
+                            <p className="font-medium">{room.name}</p>
+                            {!room.is_active && (
+                              <p className="text-xs text-muted-foreground">Inaktív</p>
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEditRoom(room)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDelete(room.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
-                      <label className="w-12 h-12 border-2 border-dashed rounded flex items-center justify-center cursor-pointer hover:border-primary transition-colors">
-                        <Plus className="h-4 w-4 text-muted-foreground" />
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleImageUpload(room.id, file);
-                          }}
-                        />
-                      </label>
                     </div>
-                  </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
 
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => openEditRoom(room)}
-                    >
-                      <Pencil className="h-3 w-3 mr-1" />
-                      Szerkesztés
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      title="Szoba másolása"
-                      onClick={() => openCopyRoom(room)}
-                    >
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(room.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+            {/* Rooms without type */}
+            {roomsByType['no-type']?.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="font-display text-lg text-muted-foreground">Típus nélküli szobák</CardTitle>
+                    <Badge variant="outline">{roomsByType['no-type'].length} szoba</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {roomsByType['no-type'].map((room) => (
+                      <div
+                        key={room.id}
+                        className="flex items-center justify-between p-3 rounded-lg border bg-muted/30"
+                      >
+                        <div>
+                          <p className="font-medium">{room.name}</p>
+                          <p className="text-xs text-destructive">Nincs típus!</p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEditRoom(room)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleDelete(room.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )}
           </div>
         )}
       </div>

@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Percent,
+  Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +23,7 @@ interface AdminLayoutProps {
 
 const navigation = [
   { name: 'Áttekintés', href: '/admin', icon: Building2 },
+  { name: 'Szobatípusok', href: '/admin/room-types', icon: Layers },
   { name: 'Szobák', href: '/admin/rooms', icon: Bed },
   { name: 'Árazás', href: '/admin/pricing', icon: Calendar },
   { name: 'Kedvezmények', href: '/admin/discounts', icon: Percent },

@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import BookingPage from "./pages/BookingPage";
 import AdminPage from "./pages/admin";
+import AdminRoomTypesRoute from "./pages/admin/RoomTypesRoute";
 import AdminRoomsRoute from "./pages/admin/RoomsRoute";
 import AdminPricingRoute from "./pages/admin/PricingRoute";
 import AdminDiscountsRoute from "./pages/admin/DiscountsRoute";
@@ -27,6 +28,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/book/:roomId" element={<BookingPage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/room-types" element={<AdminRoomTypesRoute />} />
             <Route path="/admin/rooms" element={<AdminRoomsRoute />} />
             <Route path="/admin/pricing" element={<AdminPricingRoute />} />
             <Route path="/admin/discounts" element={<AdminDiscountsRoute />} />
