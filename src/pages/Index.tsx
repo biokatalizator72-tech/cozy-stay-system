@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -68,6 +68,7 @@ export default function Index() {
   const [nights, setNights] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState(10);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -290,6 +291,10 @@ export default function Index() {
     setNights(stayDates.length);
     setAvailableRoomTypes(sorted);
     setIsSearching(false);
+
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
   };
 
   // Format guest summary for display
@@ -340,7 +345,7 @@ export default function Index() {
 
       {/* Room Types Section - only show after search */}
       {searchParams && (
-        <section className="py-8 lg:py-16">
+        <section ref={resultsRef} className="py-8 lg:py-16">
           <div className="container">
             <div className="text-center mb-8">
               <h2 className="font-display text-3xl lg:text-4xl font-semibold mb-4">
