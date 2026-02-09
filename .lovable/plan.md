@@ -1,146 +1,121 @@
 
-# Gyermekarak beepitese a Kedvezmenyek beallitasa oldalra
+# Szoba létszám és pótágyak beállítása - min_nights teljes eltávolítása
 
-## Osszefoglalo
+## Összefoglalás
 
-A meglevo AdminDiscounts.tsx oldalhoz hozzaadunk egy uj szekciot a gyermekarak kezelesere, amely lehetove teszi a gyermek korcsoportok es a hozzajuk tartozo kedvezmenyek beallitasat.
+Az AdminRooms.tsx oldalon a "Min. éjszakák" (min_nights) mezőt teljesen eltávolítjuk, és helyére három új mezőt adunk az alaplétszám és pótágyak kezeléséhez. A minimum éjszakák követelménye a jövőben az ártáblában (pricing_rules) lesz megadva.
 
-## Uj adatbazis tabla
+## Adatbázis módosítás
 
-### `child_age_brackets` - Gyermek korkategoriak
-
-| Mezo | Tipus | Leiras |
-|------|-------|--------|
-| id | uuid | Elsodleges kulcs |
-| from_age | integer | Kortol (0-99) |
-| to_age | integer | Korig (0-99) |
-| discount_percent | integer | Kedvezmeny % (0-100, ahol 100 = ingyenes) |
-| sort_order | integer | Rendezesi sorrend |
-| created_at | timestamp | Letrehozas ideje |
-
-## Admin felulet modositasok
-
-### Uj szekco az AdminDiscounts.tsx-ben
-
-A meglevo ket szekco (Ejszaka kedvezmenyek, Kulonleges kedvezmenyek) melle erkezik egy harmadik:
-
-```text
-+--------------------------------------------------+
-|  GYERMEKARAZAS                                   |
-+--------------------------------------------------+
-|                                                  |
-|  Gyermekedvezmeny engedelyezese: [x] Be / [ ] Ki |
-|                                                  |
-|  +--------------------------------------------+  |
-|  |  Minimum eletkor | Maximum eletkor | Kedv% |  |
-|  |  [Lenyilo 0-99]  | [Lenyilo 0-99]  | [100] |  |
-|  |  0               | 2               | 100%  |  |
-|  |  3               | 11              | 50%   |  |
-|  |                                            |  |
-|  |  [+ Uj eletkor sav hozzaadasa]             |  |
-|  +--------------------------------------------+  |
-|                                                  |
-|  [Mentes]                                        |
-+--------------------------------------------------+
-```
-
-### Komponens funkcionalitas
-
-1. **Toggle kapcsolo**: "Gyermekedvezmeny engedelyezese" - ha ki van kapcsolva, az egesz szekco szurkitve jelenik meg
-2. **Korkategoria sorok**: Minden sor harom lenyilo mezovel
-   - Minimum eletkor (0-99)
-   - Maximum eletkor (0-99)
-   - Kedvezmeny % (0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 - ahol 100% = ingyenes)
-3. **Uj eletkor sav hozzaadasa gomb**: Uj ures sort ad hozza
-4. **Torles gomb**: Minden sor mellett
-5. **Mentes gomb**: Az osszes modositast menti
-
-### Pelda ertekek
-
-- 0-2 eves: 100% kedvezmeny (ingyenes)
-- 3-11 eves: 50% kedvezmeny (felár)
-- 12-17 eves: 20% kedvezmeny
-
-## Technikai reszletek
-
-### Adatbazis migracio
+### Új oszlopok a `rooms` táblában
 
 ```sql
-create table public.child_age_brackets (
-  id uuid primary key default gen_random_uuid(),
-  from_age integer not null default 0,
-  to_age integer not null default 2,
-  discount_percent integer not null default 100,
-  sort_order integer not null default 0,
-  created_at timestamp with time zone not null default now()
-);
+alter table public.rooms 
+  add column base_capacity integer not null default 2,
+  add column extra_beds integer not null default 0,
+  add column adult_extra_beds integer not null default 0;
 
-alter table public.child_age_brackets enable row level security;
-
-create policy "Anyone can view child age brackets"
-  on public.child_age_brackets for select
-  using (true);
-
-create policy "Admins can manage child age brackets"
-  on public.child_age_brackets for all
-  using (public.has_role(auth.uid(), 'admin'))
-  with check (public.has_role(auth.uid(), 'admin'));
+-- Meglévő capacity adatok migrációja base_capacity-be
+update public.rooms set base_capacity = capacity where true;
 ```
 
-### Modositando fajl
+A `min_nights` oszlop marad az adatbázisban (nem módosítjuk), de az alkalmazás szintjén már nem használjuk.
 
-| Fajl | Modositas |
-|------|-----------|
-| src/pages/admin/AdminDiscounts.tsx | Uj "Gyermekarazas" szekco hozzaadasa a meglevo ket szekco ele |
+## AdminRooms.tsx módosítások
 
-### Uj state valtozok az AdminDiscounts.tsx-ben
+### Room interface
 
+Az interface-ből eltávolítjuk a `min_nights` mezőt:
 ```typescript
-interface ChildAgeBracket {
+interface Room {
   id: string;
-  from_age: number;
-  to_age: number;
-  discount_percent: number;
+  name: string;
+  description: string | null;
+  capacity: number;
+  base_capacity: number;        // Új
+  extra_beds: number;           // Új
+  adult_extra_beds: number;     // Új
+  base_price: number;
+  amenities: string[];
+  is_active: boolean;
   sort_order: number;
 }
-
-const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
-const [childPricingEnabled, setChildPricingEnabled] = useState(true);
 ```
 
-### UI elemek
+### formData
 
-A gyermekarazas szekcioval bovul az oldal:
-
-1. **Card komponens** "Gyermekarazas" cimmel
-2. **Switch komponens** az engedelyezeshez
-3. **Table komponens** a korkategoriakhoz:
-   - Oszlopok: Min. eletkor | Max. eletkor | Kedvezmeny % | Torles
-   - Minden cellaban Select lenyilo
-4. **Button** uj sor hozzaadasahoz
-5. **Button** menteshez
-
-### Lenyilo ertekek
-
-- Eletkor valaszto: 0, 1, 2, 3, ..., 99
-- Kedvezmeny szazalek: 0%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100% (Ingyenes)
-
-### Vizualis elhelyezes
-
-A szekcio sorrendje az oldalon:
-1. Gyermekarazas (uj)
-2. Ejszakak szama szerinti kedvezmenyek (meglevo)
-3. Kulonleges kedvezmenyek (meglevo)
-
-## Arszamitasra gyakorolt hatas
-
-A gyermekarak a felnott ar alapjan szamolodnak:
-
-```text
-Gyermek ar = Felnott ar * (1 - discount_percent / 100)
-
-Pelda:
-- Felnott ar: 20.000 Ft / fo / ej
-- 5 eves gyerek, 50% kedvezmeny
-- Gyermek ar: 20.000 * 0.5 = 10.000 Ft / fo / ej
+Eltávolítjuk a `min_nights`-t:
+```typescript
+const [formData, setFormData] = useState({
+  name: '',
+  description: '',
+  base_capacity: 2,        // Új
+  extra_beds: 0,           // Új
+  adult_extra_beds: 0,     // Új
+  base_price: 0,
+  amenities: '',
+  is_active: true,
+});
 ```
+
+### Form - Dialog tartalma
+
+**Eltávolítandó:**
+- A teljes "Min. éjszakák" input mezo blokk (jelenleg 2 oszlopos gridben az "Férőhely" mellett)
+
+**Helyére kerülnek az új mezők** 2 oszlopos gridben:
+- **1. sor**: Alaplétszám (base_capacity) és Max. pótágyak száma (extra_beds)
+- **2. sor**: Max. létszám (szamított, readonly) és Ebből felnőtt méretű (adult_extra_beds)
+
+Mezők:
+- Alaplétszám: Input, type="number", min=1, max=99
+- Max. pótágyak száma: Input, type="number", min=0, max=99
+- Max. létszám: Readonly szöveg mezo, értéke = base_capacity + extra_beds
+- Ebből felnőtt méretű: Input, type="number", min=0, max=99
+
+### handleSave
+
+- Kiszámítjuk: `capacity = base_capacity + extra_beds`
+- A roomData-ba kerül: base_capacity, extra_beds, adult_extra_beds, capacity
+- **Eltávolítjuk**: min_nights mező kimentést
+
+### openEditRoom és openCopyRoom
+
+Frissítjük az inicializálást:
+```typescript
+base_capacity: room.base_capacity,
+extra_beds: room.extra_beds,
+adult_extra_beds: room.adult_extra_beds,
+```
+
+**Eltávolítjuk**: `min_nights: room.min_nights`
+
+### Room card
+
+**Eltávolítandó:**
+- A "Min. éjszakák: X" sort megjelenítő rész
+
+**Hozzáadandó:**
+- Max. létszám kijelzése: "Max. létszám: X fő"
+
+## Technikai részletek
+
+### Módosított fájlok
+- `src/pages/admin/AdminRooms.tsx`
+
+### Vizuális változások
+- Formban 2 új sor az új 3 mezővel (Alaplétszám, Max. pótágyak, Ebből felnőtt + Max. létszám számított)
+- Room kártyákon a Min. éjszakák sora helyett Max. létszám jelenik meg
+
+### Adatbázis migrációs sor
+
+A migration az alábbi SQL-t fogja tartalmazni:
+```sql
+alter table public.rooms 
+  add column base_capacity integer not null default 2,
+  add column extra_beds integer not null default 0,
+  add column adult_extra_beds integer not null default 0;
+
+update public.rooms set base_capacity = capacity where true;
+```
+
