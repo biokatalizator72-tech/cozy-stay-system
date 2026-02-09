@@ -1,85 +1,80 @@
 
-# Vendegoldal atalakitasa: szobatipusok megjelenitese szobak helyett
+# Kalkulalt teljes osszeg megjelenirese a szobatipus kartyakon
 
 ## Osszefoglalo
 
-A vendeg oldalon a kereses eredmenyekent nem egyedi szobak, hanem **szobatipusok** jelennek meg. A vendeg szobatipust foglal, nem konkret szobat.
+A szobatipus kartyakon az alapar helyett a teljes tartózkodás kalkulált összege jelenik meg, figyelembe véve a szezonális árakat (pricing_rules) és az éjszakák számát.
 
-## Valtozasok
+## Jelenlegi mukodes
 
-### 1. Index.tsx - Fo oldal
+- A RoomCard a `room.base_price`-t jeleníti meg "/ éjszaka" felirattal
+- Az árkalkuláció csak a BookingPage-en történik meg
 
-**Adatlekerdezes atalakitasa:**
-- `rooms` tabla helyett `room_types` tablat kerdezzuk le (is_active = true)
-- `room_images` helyett `room_type_images` tablat hasznaljuk
-- A `Room` interface helyett `RoomType` interface (id, name, description, base_capacity, extra_beds, adult_extra_beds, capacity, base_price, amenities, sort_order)
+## Tervezett valtozasok
 
-**Elerhetseg vizsgalat:**
-- A `room_type_availability` tablat kerdezzuk le a kivalasztott idoszakra
-- Egy szobatipus akkor elerheto, ha **minden** napra van legalabb 1 szabad szoba (available_count >= 1)
-- A `bookings` tabla foglalasait is figyelembe vesszuk: az adott room_type_id-hoz tartozo szobak foglalasai csokkentik a kontingenseket
-- A kapacitas szurest a szobatipus `capacity` mezojebol szamoljuk
+### 1. Index.tsx - Árkalkuláció a keresés során
 
-**Szovegek frissitese:**
-- "Elerheto szobak" --> "Elerheto szobatipusok" (vagy megmaradhat "Elerheto szobak" ha a felhasznalo szamara igy termeszetesebb)
+A `handleSearch` függvényben a szűrés után minden elérhető szobatípushoz lekérdezzük a `pricing_rules` táblát, és kiszámoljuk a teljes összeget:
 
-### 2. RoomCard.tsx - Szobakartya
+- Lekérdezés: `pricing_rules` ahol `room_type_id` az elérhető szobatípusok ID-jai között van
+- Minden éjszakára: ha van `pricing_rule` az adott dátumra, annak az ára; egyébként a `base_price`
+- Az eredményt egy `Map<roomTypeId, totalPrice>` struktúrában tároljuk
+- Ezt átadjuk a RoomCard-nak egy új `totalPrice` prop-ként
 
-**Interface atalakitasa:**
-- `Room` --> `RoomType` (ugyanazok a mezok: id, name, description, capacity, base_price, amenities)
-- `RoomImage` marad (id, image_url, sort_order)
-- A prop nev maradhat `room` vagy atnevezheto `roomType`-ra
+### 2. RoomCard.tsx - Megjelenítés módosítása
 
-**Foglalasi link:**
-- `/book/:roomId` --> `/book/:roomTypeId`
-- A URL parameterek maradnak: checkIn, checkOut, adults, children
+- Új opcionális prop: `totalPrice?: number` és `nights?: number`
+- Ha `totalPrice` megvan: a kalkulált teljes összeget jelenítjük meg "összesen" felirattal
+- Ha nincs (pl. keresés előtti állapot): marad a `base_price` "/ éjszaka" felirattal
 
-### 3. BookingPage.tsx - Foglalasi oldal
-
-**Route parameterek:**
-- `roomId` --> `roomTypeId`
-- A `rooms` tabla helyett `room_types` tablat kerdezi le
-- A `room_images` helyett `room_type_images` tablat hasznaljuk
-- A `pricing_rules` lekerdezesben `room_type_id`-t hasznalunk `room_id` helyett
-
-**Foglalas mentese:**
-- A `bookings` tablaba `room_id` helyett (vagy mellett) a `room_type_id`-t mentjuk
-- Ehhez a `bookings` tablaban szukseg lesz egy `room_type_id` oszlopra (adatbazis migracio)
-
-### 4. App.tsx - Route
-
-- `/book/:roomId` --> `/book/:roomTypeId`
-
-### 5. Adatbazis migracio
-
-A `bookings` tablahoz hozzaadjuk a `room_type_id` oszlopot:
-```sql
-ALTER TABLE public.bookings 
-  ADD COLUMN room_type_id uuid REFERENCES public.room_types(id);
+**Megjelenítés:**
+```
+120 000 Ft
+2 éjszaka összesen
 ```
 
-Ez lehetove teszi, hogy a foglalas szobatipushoz kossuk, es kesobbi lepesben az admin rendelje hozza a konkret szobat.
-
-## Technikai reszletek
-
-### Elerhetseg szamitasi logika
-
-```
-1. Lekerdezzuk az osszes room_type_availability rekordot a keresett datumtartomanyra
-2. Lekerdezzuk az osszes foglalast (pending/confirmed) ami atfed a datumtartomanyal
-3. Minden szobatipusra, minden napra:
-   - admin_count = room_type_availability.available_count (ha nincs rekord, 0)
-   - booked_count = az adott napra eso foglalasok szama
-   - free = admin_count - booked_count
-4. Egy szobatipus elerheto, ha MINDEN napra free >= 1
-```
-
-### Modositando fajlok
+### 3. Modositando fajlok
 
 | Fajl | Valtozas |
 |------|----------|
-| `src/pages/Index.tsx` | room_types + room_type_images + room_type_availability lekerdezes |
-| `src/components/guest/RoomCard.tsx` | Interface atnevezes, URL /book/:roomTypeId |
-| `src/pages/BookingPage.tsx` | room_types lekerdezes, room_type_id mentes |
-| `src/App.tsx` | Route atnevezes |
-| Adatbazis migracio | bookings.room_type_id oszlop |
+| `src/pages/Index.tsx` | pricing_rules lekérdezés + totalPrice számítás + prop átadás |
+| `src/components/guest/RoomCard.tsx` | totalPrice + nights prop, megjelenítés módosítás |
+
+## Technikai reszletek
+
+### Arkalkulacios logika (Index.tsx)
+
+```typescript
+// A handleSearch-ben, a szures utan:
+const roomTypeIds = sorted.map(rt => rt.id);
+
+const { data: pricingRules } = await supabase
+  .from('pricing_rules')
+  .select('room_type_id, start_date, end_date, price_per_night')
+  .in('room_type_id', roomTypeIds);
+
+// Minden szobatipusra kiszamoljuk a teljes arat
+const totalPrices: Record<string, number> = {};
+sorted.forEach(rt => {
+  let total = 0;
+  stayDates.forEach(dateStr => {
+    const rule = pricingRules?.find(r => 
+      r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
+    );
+    total += rule?.price_per_night || rt.base_price;
+  });
+  totalPrices[rt.id] = total;
+});
+```
+
+### RoomCard megjelenitesi valtozas
+
+```typescript
+// Regi:
+{formatPrice(room.base_price)}
+/ éjszaka
+
+// Uj (ha van totalPrice):
+{formatPrice(totalPrice)}
+{nights} éjszaka összesen
+```
