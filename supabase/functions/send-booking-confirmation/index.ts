@@ -48,7 +48,7 @@ serve(async (req) => {
       .replace(/{property_name}/g, propertyName);
 
     const emailResponse = await resend.emails.send({
-      from: `${propertyName} <onboarding@resend.dev>`,
+      from: `${propertyName} <info@siralyhotel.hu>`,
       to: [guest_email],
       subject: `Foglalás visszaigazolás - ${propertyName}`,
       html: emailBody.replace(/\n/g, "<br>"),
