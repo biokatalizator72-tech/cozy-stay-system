@@ -1,28 +1,64 @@
 
 
-# Fix: Tomeges kitoltes nem menti az adatokat
+# Ejszaka kedvezmenyek alkalmazasa + athuzott ar megjelenites
 
 ## Problema
 
-A `pricing_rules` tabla `room_id` oszlopara foreign key constraint van, ami a `rooms` tablara hivatkozik. A jelenlegi kod a **room_type_id**-t irja be a `room_id` mezobe is, ami ervenytelen foreign key -- ezert minden INSERT hibara fut.
-
-Ez a hiba a `saveBulk()` fuggvenyben es a `savePricing()` fuggvenyben is jelen van.
+A `night_discounts` tablaban levo kedvezmenyek (3+ ej = 5%, 6+ ej = 10%) nincsenek alkalmazva sem a keresesi talalati oldalon (Index.tsx), sem a foglalasi oldalon (BookingPage.tsx).
 
 ## Megoldas
 
-### Modositando fajl: `src/pages/admin/AdminPricing.tsx`
+### 1. `src/pages/Index.tsx` -- kedvezmeny lekerdezes es alkalmazas
 
-1. **Rooms lekerese**: A `fetchData()` fuggvenyben lekerjuk a `rooms` tablat is (legalabb `id` es `room_type_id` mezok), es eltaroljuk state-ben.
+**fetchData():**
+- Lekerjuk a `night_discounts` tablat es eltaroljuk state-ben (`nightDiscounts`)
 
-2. **`saveBulk()` javitasa**: Az INSERT muveletnel a `room_id` mezobe az adott `room_type_id`-hoz tartozo elso szoba (`rooms` tabla) ID-jat hasznaljuk, nem a room_type_id-t.
+**handleSearch() arszamitas:**
+- A `calculatedPrices` kiszamitasa utan megkeressuk a megfelelo kedvezmenyt:
+  - `nightDiscounts.filter(d => nights >= d.min_nights)` kozul a legnagyobb `min_nights` erteku
+  - Alkalmazzuk: `discountedPrice = total * (1 - discount_percent / 100)`
+- Ket ar-tombot tarolunk state-ben:
+  - `originalPrices` -- kedvezmeny nelkuli osszeg
+  - `totalPrices` -- kedvezmenyezett vegosszeg
+- Atkuldjuk a `discountPercent`-et is a `RoomCard`-nak
 
-3. **`savePricing()` javitasa**: Ugyanez a logika -- a room_type_id helyett a megfelelo room id-t hasznaljuk.
+### 2. `src/components/guest/RoomCard.tsx` -- athuzott ar megjelenites
 
-### Konkret valtozasok
+Uj props: `originalPrice?: number`, `discountPercent?: number`
 
-- Uj state: `rooms` tomb (id, room_type_id)
-- `fetchData`-ban uj lekerdezes: `supabase.from('rooms').select('id, room_type_id')`
-- `saveBulk()` INSERT-ben: `room_id` erteke a `rooms.find(r => r.room_type_id === bulkRoomTypeId)?.id`
-- `savePricing()` INSERT-ben: hasonlo javitas
-- Hibakezelesi log is javul, mert az `error` objektumot a `catch` agban kiloggoljuk
+Az ar megjelenitese a szallas.hu referencia alapjan:
+- Ha van kedvezmeny:
+  - Kis `-X%` badge (zold vagy narancs szinu)
+  - Eredeti ar athuzva (szurke, kisebb betumeret, `line-through`)
+  - Kedvezmenyezett ar nagyban, felkoverrel (primary szin)
+- Ha nincs kedvezmeny: jelenlegi megjelenites marad
+
+```text
+Pelda megjelenites:
+
+        -10%
+    ~~246 000 Ft~~
+    222 000 Ft
+    6 ejszaka osszesen
+```
+
+### 3. `src/pages/BookingPage.tsx` -- foglalasi oldal
+
+**fetchData():**
+- Lekerjuk a `night_discounts` tablat
+
+**calculateTotal():**
+- Az osszeg kiszamitasa utan alkalmazzuk a kedvezmenyt
+- Ket erteket adunk vissza: `{ nights, total, originalTotal, discountPercent }`
+
+**Megjelenites (ar osszesito resz, ~410-430 sor):**
+- Ha van kedvezmeny, az eredeti ar athuzva, mellette/alatta a kedvezmenyezett ar es a szazalek
+
+## Erintett fajlok
+
+| Fajl | Valtozas |
+|------|----------|
+| `src/pages/Index.tsx` | `night_discounts` fetch + alkalmazas + `originalPrices` state |
+| `src/components/guest/RoomCard.tsx` | Uj props (`originalPrice`, `discountPercent`) + athuzott ar UI |
+| `src/pages/BookingPage.tsx` | `night_discounts` fetch + alkalmazas + athuzott ar megjelenites |
 
