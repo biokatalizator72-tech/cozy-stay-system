@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { RoomCard } from '@/components/guest/RoomCard';
 import { PropertyHero } from '@/components/guest/PropertyHero';
-import { SearchForm } from '@/components/guest/SearchForm';
+import { SearchForm, ChildAgeBracket, GuestCounts } from '@/components/guest/SearchForm';
 import { MapPin, Phone, Mail, Loader2 } from 'lucide-react';
 import { format, eachDayOfInterval, addDays, parseISO } from 'date-fns';
 
@@ -46,7 +46,8 @@ interface PropertyImage {
 interface SearchParams {
   checkIn: Date;
   checkOut: Date;
-  guests: number;
+  adults: number;
+  children: { bracketId: string; count: number }[];
 }
 
 export default function Index() {
@@ -54,6 +55,7 @@ export default function Index() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomImages, setRoomImages] = useState<Record<string, RoomImage[]>>({});
   const [propertyImages, setPropertyImages] = useState<PropertyImage[]>([]);
+  const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Search state
@@ -89,8 +91,15 @@ export default function Index() {
         .select('*')
         .order('sort_order');
 
+      // Fetch child age brackets
+      const { data: bracketsData } = await supabase
+        .from('child_age_brackets')
+        .select('*')
+        .order('sort_order');
+
       setProperty(propertyData);
       setPropertyImages(propImagesData || []);
+      setChildAgeBrackets(bracketsData || []);
       
       const transformedRooms: Room[] = (roomsData || []).map(room => ({
         ...room,
@@ -121,9 +130,19 @@ export default function Index() {
     fetchData();
   }, []);
 
-  const handleSearch = async (checkIn: Date, checkOut: Date, guests: number) => {
+  const handleSearch = async (checkIn: Date, checkOut: Date, guestCounts: GuestCounts) => {
     setIsSearching(true);
-    setSearchParams({ checkIn, checkOut, guests });
+    
+    // Calculate total guests
+    const totalChildren = guestCounts.children.reduce((sum, c) => sum + c.count, 0);
+    const totalGuests = guestCounts.adults + totalChildren;
+    
+    setSearchParams({ 
+      checkIn, 
+      checkOut, 
+      adults: guestCounts.adults,
+      children: guestCounts.children
+    });
 
     const checkInStr = format(checkIn, 'yyyy-MM-dd');
     const checkOutStr = format(checkOut, 'yyyy-MM-dd');
@@ -176,15 +195,15 @@ export default function Index() {
       }
     });
 
-    // Filter rooms: capacity >= guests AND not booked
+    // Filter rooms: capacity >= total guests AND not booked
     const filtered = rooms.filter(
-      (room) => room.capacity >= guests && !bookedRoomIds.has(room.id)
+      (room) => room.capacity >= totalGuests && !bookedRoomIds.has(room.id)
     );
 
     // Sort: exact capacity match first, then by capacity difference, then by sort_order
     const sorted = [...filtered].sort((a, b) => {
-      const diffA = Math.abs(a.capacity - guests);
-      const diffB = Math.abs(b.capacity - guests);
+      const diffA = Math.abs(a.capacity - totalGuests);
+      const diffB = Math.abs(b.capacity - totalGuests);
       
       if (diffA !== diffB) {
         return diffA - diffB;
@@ -194,6 +213,21 @@ export default function Index() {
 
     setAvailableRooms(sorted);
     setIsSearching(false);
+  };
+
+  // Format guest summary for display
+  const formatGuestSummary = () => {
+    if (!searchParams) return '';
+    
+    const parts: string[] = [];
+    parts.push(`${searchParams.adults} felnőtt`);
+    
+    const totalChildren = searchParams.children.reduce((sum, c) => sum + c.count, 0);
+    if (totalChildren > 0) {
+      parts.push(`${totalChildren} gyerek`);
+    }
+    
+    return parts.join(', ');
   };
 
   if (loading) {
@@ -219,6 +253,7 @@ export default function Index() {
           <div className="max-w-4xl mx-auto -mt-16 relative z-10">
             <SearchForm
               maxCapacity={maxCapacity}
+              childAgeBrackets={childAgeBrackets}
               onSearch={handleSearch}
               isSearching={isSearching}
             />
@@ -235,7 +270,7 @@ export default function Index() {
                 Elérhető szobák
               </h2>
               <p className="text-muted-foreground">
-                {format(searchParams.checkIn, 'yyyy. MMMM d.')} - {format(searchParams.checkOut, 'yyyy. MMMM d.')} • {searchParams.guests} vendég
+                {format(searchParams.checkIn, 'yyyy. MMMM d.')} - {format(searchParams.checkOut, 'yyyy. MMMM d.')} • {formatGuestSummary()}
               </p>
             </div>
 
@@ -258,7 +293,8 @@ export default function Index() {
                     index={index}
                     checkIn={searchParams.checkIn}
                     checkOut={searchParams.checkOut}
-                    guests={searchParams.guests}
+                    adults={searchParams.adults}
+                    children={searchParams.children}
                   />
                 ))}
               </div>
