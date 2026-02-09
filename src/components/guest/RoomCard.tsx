@@ -35,9 +35,11 @@ interface RoomCardProps {
   checkOut?: Date;
   adults?: number;
   children?: ChildCount[];
+  totalPrice?: number;
+  nights?: number;
 }
 
-export function RoomCard({ room, images, index, checkIn, checkOut, adults, children }: RoomCardProps) {
+export function RoomCard({ room, images, index, checkIn, checkOut, adults, children, totalPrice, nights }: RoomCardProps) {
   const [currentImage, setCurrentImage] = useState(0);
   const hasImages = images.length > 0;
 
@@ -167,9 +169,11 @@ export function RoomCard({ room, images, index, checkIn, checkOut, adults, child
         <div className="flex items-center justify-between pt-4 border-t">
           <div>
             <div className="text-2xl font-bold text-primary">
-              {formatPrice(room.base_price)}
+              {formatPrice(totalPrice ?? room.base_price)}
             </div>
-            <div className="text-xs text-muted-foreground">/ éjszaka</div>
+            <div className="text-xs text-muted-foreground">
+              {totalPrice != null && nights ? `${nights} éjszaka összesen` : '/ éjszaka'}
+            </div>
           </div>
           <Link to={buildBookingUrl()}>
             <Button className="group/btn">
