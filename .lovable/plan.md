@@ -1,121 +1,112 @@
 
-# Szoba létszám és pótágyak beállítása - min_nights teljes eltávolítása
+# Szobatípusos árazás és kontingenskezelés
 
-## Összefoglalás
+## Összefoglaló
 
-Az AdminRooms.tsx oldalon a "Min. éjszakák" (min_nights) mezőt teljesen eltávolítjuk, és helyére három új mezőt adunk az alaplétszám és pótágyak kezeléséhez. A minimum éjszakák követelménye a jövőben az ártáblában (pricing_rules) lesz megadva.
+Az árazás oldalon a jelenlegi "szoba + checkbox" rendszert átalakítjuk "szobatípus + darabszám" rendszerré. A zöld pipa checkbox helyett egy szám mező jelenik meg, ami megmutatja, hogy az adott szobatípusból hány darab foglalható az adott napon.
 
-## Adatbázis módosítás
+## Működési logika
 
-### Új oszlopok a `rooms` táblában
+- Ha 5 egyforma szobám van egy típusból, beírom: **5**
+- Ha egy foglalt (booking táblában van rá foglalás), a rendszer automatikusan **4**-et mutat
+- Ha **0**-t írok be, az azt jelenti: azon a napon nincs ilyen típusú szoba foglalható
+
+## Adatbázis változások
+
+### 1. Új tábla: `room_type_availability`
+
+Ez tárolja a szobatípusonkénti napi kontingenseket:
+
+| Mező | Típus | Leírás |
+|------|-------|--------|
+| id | uuid | Elsődleges kulcs |
+| room_type_id | uuid | Hivatkozás a szobatípusra (FK) |
+| date | date | Nap |
+| available_count | integer | Elérhető szobák száma (admin által beállított) |
+| created_at | timestamp | Létrehozás ideje |
+
+### 2. Módosított tábla: `pricing_rules`
+
+A `room_id` helyett `room_type_id`-t fog használni:
 
 ```sql
-alter table public.rooms 
-  add column base_capacity integer not null default 2,
-  add column extra_beds integer not null default 0,
-  add column adult_extra_beds integer not null default 0;
-
--- Meglévő capacity adatok migrációja base_capacity-be
-update public.rooms set base_capacity = capacity where true;
+alter table public.pricing_rules 
+  add column room_type_id uuid references public.room_types(id);
 ```
 
-A `min_nights` oszlop marad az adatbázisban (nem módosítjuk), de az alkalmazás szintjén már nem használjuk.
+## Frontend változások az AdminPricing.tsx-ben
 
-## AdminRooms.tsx módosítások
+### Jelenlegi felépítés → Új felépítés
 
-### Room interface
+**Jelenlegi:**
+- Sorok: egyedi szobák
+- Oszlopok: napok
+- Cellák: ár input + min. éjszakák input + foglalható checkbox
 
-Az interface-ből eltávolítjuk a `min_nights` mezőt:
-```typescript
-interface Room {
-  id: string;
-  name: string;
-  description: string | null;
-  capacity: number;
-  base_capacity: number;        // Új
-  extra_beds: number;           // Új
-  adult_extra_beds: number;     // Új
-  base_price: number;
-  amenities: string[];
-  is_active: boolean;
-  sort_order: number;
-}
-```
+**Új:**
+- Sorok: szobatípusok
+- Oszlopok: napok
+- Cellák: ár input + min. éjszakák input + **elérhető darabszám input**
 
-### formData
+### Részletes változások
 
-Eltávolítjuk a `min_nights`-t:
-```typescript
-const [formData, setFormData] = useState({
-  name: '',
-  description: '',
-  base_capacity: 2,        // Új
-  extra_beds: 0,           // Új
-  adult_extra_beds: 0,     // Új
-  base_price: 0,
-  amenities: '',
-  is_active: true,
-});
-```
+1. **Interface frissítés**:
+   - `Room` → `RoomType` (id, name, base_price, is_active)
+   - A `rooms` lekérdezés helyett `room_types` lekérdezés
 
-### Form - Dialog tartalma
+2. **Blocked dates → Availability count**:
+   - A `blockedDates` state helyett `availability` state
+   - A checkbox helyett number input (0-99)
+   - 0 = nem foglalható, 1+ = ennyi szoba elérhető
 
-**Eltávolítandó:**
-- A teljes "Min. éjszakák" input mezo blokk (jelenleg 2 oszlopos gridben az "Férőhely" mellett)
+3. **Cellastruktúra**:
+   ```
+   +---------+
+   | [12000] |  ← Ár input
+   | [  2  ] |  ← Min. éjszakák input
+   | [  5  ] |  ← Elérhető szobák száma input (ÚJ)
+   +---------+
+   ```
 
-**Helyére kerülnek az új mezők** 2 oszlopos gridben:
-- **1. sor**: Alaplétszám (base_capacity) és Max. pótágyak száma (extra_beds)
-- **2. sor**: Max. létszám (szamított, readonly) és Ebből felnőtt méretű (adult_extra_beds)
+4. **Mentés logika**:
+   - `ical_blocked_dates` helyett `room_type_availability` táblába ment
+   - 0 = az adott nap nem foglalható
+   - 1+ = ennyi szoba elérhető
 
-Mezők:
-- Alaplétszám: Input, type="number", min=1, max=99
-- Max. pótágyak száma: Input, type="number", min=0, max=99
-- Max. létszám: Readonly szöveg mezo, értéke = base_capacity + extra_beds
-- Ebből felnőtt méretű: Input, type="number", min=0, max=99
+### Vizuális jelzés
 
-### handleSave
+- Ha az elérhető szám 0: piros háttér (nincs szoba)
+- Ha van szabad szoba: zöld háttér intenzitása a számtól függ (opcionális)
+- A szerkesztett cellák sárga háttérrel jelennek meg (mint eddig)
 
-- Kiszámítjuk: `capacity = base_capacity + extra_beds`
-- A roomData-ba kerül: base_capacity, extra_beds, adult_extra_beds, capacity
-- **Eltávolítjuk**: min_nights mező kimentést
+## Jelmagyarázat frissítése
 
-### openEditRoom és openCopyRoom
+Régi:
+- Checkbox: ha be van pipálva, a nap foglalható
 
-Frissítjük az inicializálást:
-```typescript
-base_capacity: room.base_capacity,
-extra_beds: room.extra_beds,
-adult_extra_beds: room.adult_extra_beds,
-```
+Új:
+- Elérhető: az adott szobatípusból hány szoba foglalható (0 = nincs elérhető)
 
-**Eltávolítjuk**: `min_nights: room.min_nights`
+## Teljes terv (Szobatípusokkal együtt)
 
-### Room card
+Ez a változtatás a korábban jóváhagyott szobatípus-rendszer része. A teljes implementáció:
 
-**Eltávolítandó:**
-- A "Min. éjszakák: X" sort megjelenítő rész
+1. **Adatbázis migráció**: 
+   - `room_types` tábla létrehozása
+   - `room_type_availability` tábla létrehozása
+   - `pricing_rules` frissítése `room_type_id` mezővel
+   - Adatok migrációja
 
-**Hozzáadandó:**
-- Max. létszám kijelzése: "Max. létszám: X fő"
+2. **Új fájlok**:
+   - `src/pages/admin/AdminRoomTypes.tsx` - Szobatípusok kezelése
+   - `src/pages/admin/RoomTypesRoute.tsx` - Route wrapper
 
-## Technikai részletek
+3. **Módosított fájlok**:
+   - `src/components/admin/AdminLayout.tsx` - Szobatípusok menüpont
+   - `src/pages/admin/AdminRooms.tsx` - Egyedi szobák (típushoz rendelve)
+   - `src/pages/admin/AdminPricing.tsx` - Típusok + darabszám
+   - `src/App.tsx` - Új route
 
-### Módosított fájlok
-- `src/pages/admin/AdminRooms.tsx`
+## Összefoglalva
 
-### Vizuális változások
-- Formban 2 új sor az új 3 mezővel (Alaplétszám, Max. pótágyak, Ebből felnőtt + Max. létszám számított)
-- Room kártyákon a Min. éjszakák sora helyett Max. létszám jelenik meg
-
-### Adatbázis migrációs sor
-
-A migration az alábbi SQL-t fogja tartalmazni:
-```sql
-alter table public.rooms 
-  add column base_capacity integer not null default 2,
-  add column extra_beds integer not null default 0,
-  add column adult_extra_beds integer not null default 0;
-
-update public.rooms set base_capacity = capacity where true;
-```
-
+A checkbox-ot lecseréljük egy szám mezőre, ahol az admin beállítja, hogy az adott szobatípusból hány darab érhető el az adott napon. Ez lehetővé teszi a kontingenskezelést: több egyforma szoba esetén is pontosan tudjuk, hány szabad.
