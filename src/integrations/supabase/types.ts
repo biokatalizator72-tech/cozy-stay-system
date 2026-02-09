@@ -324,11 +324,14 @@ export type Database = {
       }
       rooms: {
         Row: {
+          adult_extra_beds: number
           amenities: Json | null
+          base_capacity: number
           base_price: number
           capacity: number
           created_at: string
           description: string | null
+          extra_beds: number
           id: string
           is_active: boolean
           min_nights: number
@@ -337,11 +340,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          adult_extra_beds?: number
           amenities?: Json | null
+          base_capacity?: number
           base_price?: number
           capacity?: number
           created_at?: string
           description?: string | null
+          extra_beds?: number
           id?: string
           is_active?: boolean
           min_nights?: number
@@ -350,11 +356,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          adult_extra_beds?: number
           amenities?: Json | null
+          base_capacity?: number
           base_price?: number
           capacity?: number
           created_at?: string
           description?: string | null
+          extra_beds?: number
           id?: string
           is_active?: boolean
           min_nights?: number
