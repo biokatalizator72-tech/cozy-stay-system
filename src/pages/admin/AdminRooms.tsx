@@ -23,8 +23,10 @@ interface Room {
   name: string;
   description: string | null;
   capacity: number;
+  base_capacity: number;
+  extra_beds: number;
+  adult_extra_beds: number;
   base_price: number;
-  min_nights: number;
   amenities: string[];
   is_active: boolean;
   sort_order: number;
@@ -48,9 +50,10 @@ export default function AdminRooms() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    capacity: 2,
+    base_capacity: 2,
+    extra_beds: 0,
+    adult_extra_beds: 0,
     base_price: 0,
-    min_nights: 1,
     amenities: '',
     is_active: true,
   });
@@ -101,9 +104,10 @@ export default function AdminRooms() {
     setFormData({
       name: '',
       description: '',
-      capacity: 2,
+      base_capacity: 2,
+      extra_beds: 0,
+      adult_extra_beds: 0,
       base_price: 0,
-      min_nights: 1,
       amenities: '',
       is_active: true,
     });
@@ -115,9 +119,10 @@ export default function AdminRooms() {
     setFormData({
       name: room.name,
       description: room.description || '',
-      capacity: room.capacity,
+      base_capacity: room.base_capacity,
+      extra_beds: room.extra_beds,
+      adult_extra_beds: room.adult_extra_beds,
       base_price: room.base_price,
-      min_nights: room.min_nights,
       amenities: room.amenities.join(', '),
       is_active: room.is_active,
     });
@@ -129,9 +134,10 @@ export default function AdminRooms() {
     setFormData({
       name: '',
       description: room.description || '',
-      capacity: room.capacity,
+      base_capacity: room.base_capacity,
+      extra_beds: room.extra_beds,
+      adult_extra_beds: room.adult_extra_beds,
       base_price: room.base_price,
-      min_nights: room.min_nights,
       amenities: room.amenities.join(', '),
       is_active: room.is_active,
     });
@@ -153,9 +159,11 @@ export default function AdminRooms() {
     const roomData = {
       name: formData.name,
       description: formData.description || null,
-      capacity: formData.capacity,
+      capacity: formData.base_capacity + formData.extra_beds,
+      base_capacity: formData.base_capacity,
+      extra_beds: formData.extra_beds,
+      adult_extra_beds: formData.adult_extra_beds,
       base_price: formData.base_price,
-      min_nights: formData.min_nights,
       amenities: amenitiesArray,
       is_active: formData.is_active,
     };
@@ -294,31 +302,61 @@ export default function AdminRooms() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="capacity">Férőhely</Label>
+                    <Label htmlFor="base_capacity">Alaplétszám (fő)</Label>
                     <Input
-                      id="capacity"
+                      id="base_capacity"
                       type="number"
                       min={1}
-                      value={formData.capacity}
+                      max={99}
+                      value={formData.base_capacity}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          capacity: parseInt(e.target.value) || 1,
+                          base_capacity: parseInt(e.target.value) || 1,
                         })
                       }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="min_nights">Min. éjszakák</Label>
+                    <Label htmlFor="extra_beds">Max. pótágyak száma (fő)</Label>
                     <Input
-                      id="min_nights"
+                      id="extra_beds"
                       type="number"
-                      min={1}
-                      value={formData.min_nights}
+                      min={0}
+                      max={99}
+                      value={formData.extra_beds}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          min_nights: parseInt(e.target.value) || 1,
+                          extra_beds: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Max. létszám (fő)</Label>
+                    <Input
+                      type="number"
+                      value={formData.base_capacity + formData.extra_beds}
+                      readOnly
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="adult_extra_beds">Ebből felnőtt méretű (fő)</Label>
+                    <Input
+                      id="adult_extra_beds"
+                      type="number"
+                      min={0}
+                      max={formData.extra_beds}
+                      value={formData.adult_extra_beds}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          adult_extra_beds: Math.min(parseInt(e.target.value) || 0, formData.extra_beds),
                         })
                       }
                     />
@@ -425,8 +463,8 @@ export default function AdminRooms() {
                     <span className="font-medium">{formatPrice(room.base_price)} / éj</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Min. éjszakák:</span>
-                    <span className="font-medium">{room.min_nights}</span>
+                    <span className="text-muted-foreground">Max. létszám:</span>
+                    <span className="font-medium">{room.capacity} fő</span>
                   </div>
                   
                   {/* Image management */}
