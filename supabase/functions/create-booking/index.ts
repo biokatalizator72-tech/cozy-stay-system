@@ -25,6 +25,13 @@ Deno.serve(async (req) => {
     const body = await req.json();
     console.log("create-booking request body:", JSON.stringify(body));
 
+    // --- Vapi wrapper kicsomagolasa ---
+    let payload = body;
+    if (body.message?.toolCalls?.[0]?.function?.arguments) {
+      payload = body.message.toolCalls[0].function.arguments;
+      console.log("create-booking: unwrapped Vapi message format");
+    }
+
     let {
       room_type_id,
       check_in,
@@ -35,7 +42,7 @@ Deno.serve(async (req) => {
       total_price,
       special_requests,
       guest_data,
-    } = body;
+    } = payload;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
