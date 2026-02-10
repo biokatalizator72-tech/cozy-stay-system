@@ -1,37 +1,41 @@
 
-# Create-booking Edge Function frissitese: Vapi message wrapper kezeles
+
+# Create-booking: nem-UUID room_type_id kezeles
 
 ## Problema
 
-A Vapi hangasszisztens ket kulonbozo formatumban kuldheti az adatokat:
-
-1. **Kozvetlen** (mukodik): `{ "guest_name": "Teszt Vapi", "check_in": "2026-06-10", ... }`
-2. **Becsomagolt** (NEM mukodik): `{ "message": { "toolCalls": [{ "function": { "arguments": { "guest_name": "Kovacs Lajos", ... } } }] } }`
-
-A jelenlegi kod csak az elso formatumot kezeli. A masodik formatumnal a mezok hianyoznak, es 400-as hiba jon vissza.
+A Vapi hangasszisztens `"standard_double_room"` szoveges azonositot kuld a `room_type_id` mezoben UUID helyett. Az adatbazis UUID tipusu oszlopot var, ezert a lekerdezes hibat dob: `invalid input syntax for type uuid`.
 
 ## Megoldas
 
-A `create-booking` Edge Function elejen hozzaadunk egy ellenorzest: ha a `body.message` letezik es tartalmaz `toolCalls` tombot, akkor onnan bontjuk ki az argumentumokat. Kulonben a meglevo kozvetlen logika marad.
+A `room_type_id` validalasa: ha nem ervenyes UUID formatumu, akkor:
+1. Probaljuk megtalalni a szobatipust nev alapjan (case-insensitive kereses a `room_types` tablaban)
+2. Ha nem talaljuk, hasznaljuk az alapertelmezett (elso aktiv) szobatipust -- ez a logika mar megvan a kodban
 
 ## Technikai reszletek
 
 Egyetlen fajl modosul: `supabase/functions/create-booking/index.ts`
 
-A `body` parse-olasa utan, de a mezo kinyeres elott:
+A `room_type_id` feldolgozasa soran, az alapertelmezett lekerdezes elott:
 
 ```text
-const body = await req.json();
-console.log("create-booking request body:", JSON.stringify(body));
+// UUID formatum ellenorzes
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// --- Vapi wrapper kicsomagolasa ---
-let payload = body;
-if (body.message?.toolCalls?.[0]?.function?.arguments) {
-  payload = body.message.toolCalls[0].function.arguments;
-  console.log("create-booking: unwrapped Vapi message format");
+if (room_type_id && !uuidRegex.test(room_type_id)) {
+  console.log(`create-booking: room_type_id is not UUID: "${room_type_id}", searching by name`);
+  const { data: matchedRT } = await supabase
+    .from("room_types")
+    .select("id")
+    .eq("is_active", true)
+    .ilike("name", `%${room_type_id.replace(/_/g, " ")}%`)
+    .limit(1)
+    .maybeSingle();
+
+  room_type_id = matchedRT?.id || null;
 }
-
-let { room_type_id, check_in, check_out, guest_name, ... } = payload;
 ```
 
-Igy mindket Vapi kuldes-formatum mukodni fog, es a kovetkezo teszthivasnal a "Kovacs Lajos" tipusu foglalasok is bekerulnek az adatbazisba.
+Ha a szoveges azonosito (pl. `"standard_double_room"`) alapjan nem talalja a szobatipust, a mar meglevo alapertelmezett logika veszi at (elso aktiv szobatipus).
+
+Ez biztositja, hogy a Vapi barmi formatumban kuldje a `room_type_id`-t, a foglalas letrejon.
