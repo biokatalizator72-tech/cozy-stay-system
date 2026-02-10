@@ -6,13 +6,26 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function parseDate(value: unknown): string | null {
+  if (!value || typeof value !== "string") return null;
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  // Try generic parse
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const {
+    const body = await req.json();
+    console.log("create-booking request body:", JSON.stringify(body));
+
+    let {
       room_type_id,
       check_in,
       check_out,
@@ -22,34 +35,52 @@ Deno.serve(async (req) => {
       total_price,
       special_requests,
       guest_data,
-    } = await req.json();
-
-    // Validate required fields
-    const missing: string[] = [];
-    if (!room_type_id) missing.push("room_type_id");
-    if (!check_in) missing.push("check_in");
-    if (!check_out) missing.push("check_out");
-    if (!guest_name) missing.push("guest_name");
-    if (!guest_email) missing.push("guest_email");
-    if (!guest_phone) missing.push("guest_phone");
-    if (total_price == null) missing.push("total_price");
-
-    if (missing.length > 0) {
-      return new Response(
-        JSON.stringify({ error: `Hiányzó mezők: ${missing.join(", ")}` }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    } = body;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // --- Default room_type_id ---
+    if (!room_type_id) {
+      const { data: defaultRT } = await supabase
+        .from("room_types")
+        .select("id")
+        .eq("is_active", true)
+        .order("sort_order")
+        .limit(1)
+        .single();
+      room_type_id = defaultRT?.id;
+    }
+
+    // --- Default optional fields ---
+    guest_email = guest_email || "nincs@megadva.hu";
+    guest_phone = guest_phone || "nem megadott";
+
+    // --- Date validation ---
+    check_in = parseDate(check_in);
+    check_out = parseDate(check_out);
+
+    // --- Validate required fields ---
+    const missing: string[] = [];
+    if (!room_type_id) missing.push("room_type_id");
+    if (!check_in) missing.push("check_in");
+    if (!check_out) missing.push("check_out");
+    if (!guest_name) missing.push("guest_name");
+
+    if (missing.length > 0) {
+      console.log("create-booking missing fields:", missing.join(", "));
+      return new Response(
+        JSON.stringify({ error: `Hiányzó mezők: ${missing.join(", ")}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Verify room type exists and is active
     const { data: roomType, error: rtError } = await supabase
       .from("room_types")
-      .select("id, name, capacity")
+      .select("id, name, capacity, base_price")
       .eq("id", room_type_id)
       .eq("is_active", true)
       .maybeSingle();
@@ -63,7 +94,17 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Quick availability check - count existing overlapping bookings
+    // --- Default total_price ---
+    if (total_price == null || total_price === undefined) {
+      const nights = Math.max(
+        1,
+        (new Date(check_out!).getTime() - new Date(check_in!).getTime()) / 86400000
+      );
+      total_price = roomType.base_price * nights;
+      console.log(`create-booking calculated total_price: ${total_price} (${nights} nights × ${roomType.base_price})`);
+    }
+
+    // Quick availability check
     const { data: rooms } = await supabase
       .from("rooms")
       .select("id")
@@ -109,6 +150,8 @@ Deno.serve(async (req) => {
 
     if (insertError) throw insertError;
 
+    console.log("create-booking success:", booking.id);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -126,6 +169,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
+    console.error("create-booking error:", error.message);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
