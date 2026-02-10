@@ -49,6 +49,20 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // --- Resolve non-UUID room_type_id by name ---
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (room_type_id && !uuidRegex.test(room_type_id)) {
+      console.log(`create-booking: room_type_id is not UUID: "${room_type_id}", searching by name`);
+      const { data: matchedRT } = await supabase
+        .from("room_types")
+        .select("id")
+        .eq("is_active", true)
+        .ilike("name", `%${room_type_id.replace(/_/g, " ")}%`)
+        .limit(1)
+        .maybeSingle();
+      room_type_id = matchedRT?.id || null;
+    }
+
     // --- Default room_type_id ---
     if (!room_type_id) {
       const { data: defaultRT } = await supabase
