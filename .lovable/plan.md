@@ -1,68 +1,37 @@
 
-
-# Create-booking Edge Function javitasa Vapi integracio szamara
+# Create-booking Edge Function frissitese: Vapi message wrapper kezeles
 
 ## Problema
 
-A Vapi hangasszisztens hivja a `create-booking` vegpontot, de a foglalas nem jelenik meg az adatbazisban. A fo okok valoszinuleg:
+A Vapi hangasszisztens ket kulonbozo formatumban kuldheti az adatokat:
 
-1. **Nincs naplozas** -- nem latjuk, mit kuld a Vapi
-2. **Kotelezo mezok** -- a `room_type_id`, `guest_email`, `guest_phone`, `total_price` mind kotelezo, de a Vapi valoszinuleg nem kuldi mindet
-3. A 400-as hibavalasz nem latszik a Vapi feluleten
+1. **Kozvetlen** (mukodik): `{ "guest_name": "Teszt Vapi", "check_in": "2026-06-10", ... }`
+2. **Becsomagolt** (NEM mukodik): `{ "message": { "toolCalls": [{ "function": { "arguments": { "guest_name": "Kovacs Lajos", ... } } }] } }`
 
-## Tervezett valtoztatások
+A jelenlegi kod csak az elso formatumot kezeli. A masodik formatumnal a mezok hianyoznak, es 400-as hiba jon vissza.
 
-### 1. Beerkező adatok naplozasa
+## Megoldas
 
-A request body-t rogton a `req.json()` utan kilogoljuk `console.log`-gal, igy a backend naplokban lathato lesz, mit kuld a Vapi.
-
-### 2. Alapertelmezett room_type_id
-
-Ha a Vapi nem kuld `room_type_id`-t, az elso aktiv szobatipust hasznaljuk alapertelmezettnek (jelenleg: "Deluxe B", `5b123575-2715-41c7-8b78-6df820b10b42`). Ehhez lekerdezzuk az adatbazisbol az elso aktiv szobatipust, igy nem fix ertek lesz.
-
-### 3. Opcionalis mezok lazitasa
-
-A kovetkezo mezoket opcionalisra allitjuk es alapertelmezett erteket adunk nekik, ha a Vapi nem kuldi:
-- `guest_email` -- alapertelmezett: `"nincs@megadva.hu"`
-- `guest_phone` -- alapertelmezett: `"nem megadott"`
-- `total_price` -- ha nincs megadva, kiszamoljuk a szobatipus `base_price` es az ejszakak szama alapjan
-
-### 4. Datum kezeles
-
-A `check_in` es `check_out` datumokat validaljuk: ha nem YYYY-MM-DD formatumban erkeznek, megprobaljuk parse-olni. Ha ervenytelen, ertelmes hibauzenet jon vissza.
+A `create-booking` Edge Function elejen hozzaadunk egy ellenorzest: ha a `body.message` letezik es tartalmaz `toolCalls` tombot, akkor onnan bontjuk ki az argumentumokat. Kulonben a meglevo kozvetlen logika marad.
 
 ## Technikai reszletek
 
 Egyetlen fajl modosul: `supabase/functions/create-booking/index.ts`
 
-A fo valtozasok:
+A `body` parse-olasa utan, de a mezo kinyeres elott:
 
-```
-// 1. Naplozas
+```text
 const body = await req.json();
 console.log("create-booking request body:", JSON.stringify(body));
 
-// 2. Alapertelmezett room_type_id lekerdezese
-if (!room_type_id) {
-  const { data } = await supabase
-    .from("room_types")
-    .select("id")
-    .eq("is_active", true)
-    .order("sort_order")
-    .limit(1)
-    .single();
-  room_type_id = data?.id;
+// --- Vapi wrapper kicsomagolasa ---
+let payload = body;
+if (body.message?.toolCalls?.[0]?.function?.arguments) {
+  payload = body.message.toolCalls[0].function.arguments;
+  console.log("create-booking: unwrapped Vapi message format");
 }
 
-// 3. Opcionalis mezok alapertelmezett ertekekkel
-guest_email = guest_email || "nincs@megadva.hu";
-guest_phone = guest_phone || "nem megadott";
-
-// 4. total_price szamitas ha hianyzik
-if (total_price == null) {
-  const nights = (new Date(check_out) - new Date(check_in)) / 86400000;
-  total_price = roomType.base_price * nights;
-}
+let { room_type_id, check_in, check_out, guest_name, ... } = payload;
 ```
 
-A naplozas utan a Vapi altal kuldott pontos adatokat latni fogjuk a backend logokban, es tovabb finomithatjuk a mukodest.
+Igy mindket Vapi kuldes-formatum mukodni fog, es a kovetkezo teszthivasnal a "Kovacs Lajos" tipusu foglalasok is bekerulnek az adatbazisba.
