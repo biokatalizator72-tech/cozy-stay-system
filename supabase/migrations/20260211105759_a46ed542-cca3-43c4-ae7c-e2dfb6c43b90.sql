@@ -1,0 +1,1 @@
+ALTER TABLE public.property_settings ADD COLUMN admin_email text;

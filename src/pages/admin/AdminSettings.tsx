@@ -22,6 +22,7 @@ interface PropertySettings {
   booking_email_template: string | null;
   ical_url: string | null;
   guest_fields: string[];
+  admin_email: string | null;
 }
 
 interface PropertyImage {
@@ -53,6 +54,7 @@ export default function AdminSettings() {
         guest_fields: Array.isArray(settingsData.guest_fields) 
           ? settingsData.guest_fields as string[]
           : ['name', 'email', 'phone', 'arrival_time', 'special_requests'],
+        admin_email: (settingsData as any).admin_email || null,
       });
     }
     setPropertyImages(imagesData || []);
@@ -80,7 +82,8 @@ export default function AdminSettings() {
         booking_email_template: settings.booking_email_template,
         ical_url: settings.ical_url,
         guest_fields: settings.guest_fields,
-      })
+        admin_email: settings.admin_email,
+      } as any)
       .eq('id', settings.id);
 
     if (error) {
@@ -178,6 +181,7 @@ export default function AdminSettings() {
             <TabsTrigger value="images">Képek</TabsTrigger>
             <TabsTrigger value="email">Email sablon</TabsTrigger>
             <TabsTrigger value="ical">iCal</TabsTrigger>
+            <TabsTrigger value="admin">Admin</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="space-y-6">
@@ -371,6 +375,31 @@ export default function AdminSettings() {
                   <p className="text-xs text-muted-foreground">
                     Ez a funkció még fejlesztés alatt áll. A rendszer később automatikusan szinkronizálja a foglalt dátumokat.
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="admin" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Admin értesítések</CardTitle>
+                <CardDescription>
+                  Erre az email címre küldünk értesítést új foglalás esetén
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="admin_email">Értesítési email cím</Label>
+                  <Input
+                    id="admin_email"
+                    type="email"
+                    value={settings.admin_email || ''}
+                    onChange={(e) =>
+                      setSettings({ ...settings, admin_email: e.target.value || null })
+                    }
+                    placeholder="admin@example.com"
+                  />
                 </div>
               </CardContent>
             </Card>

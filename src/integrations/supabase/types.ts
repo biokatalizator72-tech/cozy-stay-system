@@ -265,6 +265,7 @@ export type Database = {
       property_settings: {
         Row: {
           address: string | null
+          admin_email: string | null
           booking_email_template: string | null
           created_at: string
           deposit_percent: number
@@ -281,6 +282,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          admin_email?: string | null
           booking_email_template?: string | null
           created_at?: string
           deposit_percent?: number
@@ -297,6 +299,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          admin_email?: string | null
           booking_email_template?: string | null
           created_at?: string
           deposit_percent?: number
