@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Resend } from "https://esm.sh/resend@4.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -173,6 +174,38 @@ Deno.serve(async (req) => {
 
     console.log("create-booking success:", booking.id);
 
+    // Send admin notification email
+    try {
+      const { data: propSettings } = await supabase
+        .from("property_settings")
+        .select("admin_email, name")
+        .limit(1)
+        .single();
+
+      if (propSettings?.admin_email) {
+        const resendApiKey = Deno.env.get("RESEND_API_KEY");
+        if (resendApiKey) {
+          const resend = new Resend(resendApiKey);
+          await resend.emails.send({
+            from: `${propSettings.name || "PMS"} <info@siralyhotel.hu>`,
+            to: [propSettings.admin_email],
+            subject: "Foglalás történt",
+            html: `<h2>Foglalás adatai</h2>
+<ul>
+  <li><b>Dátum:</b> ${check_in} – ${check_out}</li>
+  <li><b>Szoba:</b> ${roomType.name}</li>
+  <li><b>Ár:</b> ${Number(total_price).toLocaleString("hu-HU")} Ft</li>
+  <li><b>Vendég neve:</b> ${guest_name}</li>
+  <li><b>Vendég email:</b> ${guest_email}</li>
+  <li><b>Vendég telefon:</b> ${guest_phone || "nem megadott"}</li>
+</ul>`,
+          });
+          console.log("Admin notification sent to", propSettings.admin_email);
+        }
+      }
+    } catch (emailErr) {
+      console.error("Admin notification email error:", emailErr.message);
+    }
     return new Response(
       JSON.stringify({
         success: true,
