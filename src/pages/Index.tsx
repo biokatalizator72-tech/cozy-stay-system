@@ -74,7 +74,7 @@ export default function Index() {
     async function fetchData() {
       // Fetch property settings
       const { data: propertyData } = await supabase
-        .from('property_settings')
+        .from('property_settings_public' as any)
         .select('*')
         .maybeSingle();
 
@@ -109,7 +109,7 @@ export default function Index() {
         .select('min_nights, discount_percent')
         .order('min_nights');
 
-      setProperty(propertyData);
+      setProperty(propertyData as any);
       setPropertyImages(propImagesData || []);
       setChildAgeBrackets(bracketsData || []);
       setNightDiscounts(nightDiscountsData || []);
