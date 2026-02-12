@@ -174,11 +174,10 @@ export default function Index() {
       .gte('date', checkInStr)
       .lte('date', format(addDays(checkOut, -1), 'yyyy-MM-dd'));
 
-    // Fetch bookings that overlap with the selected dates (by room_type_id)
+    // Fetch bookings that overlap with the selected dates (via public view)
     const { data: bookingsData } = await supabase
-      .from('bookings')
+      .from('bookings_availability' as any)
       .select('room_type_id, check_in, check_out')
-      .in('status', ['pending', 'confirmed'])
       .not('room_type_id', 'is', null)
       .lte('check_in', checkOutStr)
       .gte('check_out', checkInStr);
@@ -194,7 +193,7 @@ export default function Index() {
 
     // Build booking count map: room_type_id -> date -> booked_count
     const bookingCountMap: Record<string, Record<string, number>> = {};
-    bookingsData?.forEach((booking) => {
+    (bookingsData as any[] | null)?.forEach((booking: any) => {
       if (!booking.room_type_id) return;
       const bookingStart = new Date(booking.check_in);
       const bookingEnd = new Date(booking.check_out);
@@ -202,11 +201,11 @@ export default function Index() {
       stayDates.forEach((dateStr) => {
         const date = new Date(dateStr);
         if (date >= bookingStart && date < bookingEnd) {
-          if (!bookingCountMap[booking.room_type_id!]) {
-            bookingCountMap[booking.room_type_id!] = {};
+          if (!bookingCountMap[booking.room_type_id]) {
+            bookingCountMap[booking.room_type_id] = {};
           }
-          bookingCountMap[booking.room_type_id!][dateStr] = 
-            (bookingCountMap[booking.room_type_id!][dateStr] || 0) + 1;
+          bookingCountMap[booking.room_type_id][dateStr] = 
+            (bookingCountMap[booking.room_type_id][dateStr] || 0) + 1;
         }
       });
     });
