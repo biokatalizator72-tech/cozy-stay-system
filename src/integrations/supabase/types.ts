@@ -569,7 +569,48 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      property_settings_public: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          description: string | null
+          email: string | null
+          guest_fields: Json | null
+          id: string | null
+          latitude: number | null
+          longitude: number | null
+          name: string | null
+          phone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          description?: string | null
+          email?: string | null
+          guest_fields?: Json | null
+          id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          description?: string | null
+          email?: string | null
+          guest_fields?: Json | null
+          id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
