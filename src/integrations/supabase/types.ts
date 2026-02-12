@@ -569,6 +569,35 @@ export type Database = {
       }
     }
     Views: {
+      bookings_availability: {
+        Row: {
+          check_in: string | null
+          check_out: string | null
+          room_type_id: string | null
+          status: string | null
+        }
+        Insert: {
+          check_in?: string | null
+          check_out?: string | null
+          room_type_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          check_in?: string | null
+          check_out?: string | null
+          room_type_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_room_type_id_fkey"
+            columns: ["room_type_id"]
+            isOneToOne: false
+            referencedRelation: "room_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_settings_public: {
         Row: {
           address: string | null
