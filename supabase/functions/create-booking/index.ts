@@ -45,6 +45,45 @@ Deno.serve(async (req) => {
       guest_data,
     } = payload;
 
+    // --- Input sanitization & length limits ---
+    const maxLen = (val: unknown, max: number): string | undefined => {
+      if (!val || typeof val !== "string") return undefined;
+      return val.trim().slice(0, max);
+    };
+
+    guest_name = maxLen(guest_name, 200);
+    guest_email = maxLen(guest_email, 254);
+    guest_phone = maxLen(guest_phone, 30);
+    special_requests = maxLen(special_requests, 1000);
+
+    // Validate email format if provided
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (guest_email && !emailRegex.test(guest_email)) {
+      return new Response(
+        JSON.stringify({ error: "Érvénytelen email cím formátum." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate total_price if provided
+    if (total_price != null && (typeof total_price !== "number" || total_price < 0 || total_price > 100_000_000)) {
+      return new Response(
+        JSON.stringify({ error: "Érvénytelen ár." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Limit guest_data size
+    if (guest_data) {
+      const gdStr = JSON.stringify(guest_data);
+      if (gdStr.length > 5000) {
+        return new Response(
+          JSON.stringify({ error: "A vendég adatok túl nagyok." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
