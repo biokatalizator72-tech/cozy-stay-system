@@ -23,15 +23,18 @@ serve(async (req) => {
       },
     });
 
-    const { email, password, secret } = await req.json();
+    // Validate secret from Authorization header
+    const authHeader = req.headers.get("Authorization");
+    const ADMIN_SECRET = Deno.env.get("ADMIN_CREATION_SECRET");
 
-    // Simple secret check to prevent unauthorized admin creation
-    if (secret !== "INIT_ADMIN_2024") {
+    if (!ADMIN_SECRET || !authHeader || authHeader !== `Bearer ${ADMIN_SECRET}`) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const { email, password } = await req.json();
 
     // Check if admin already exists
     const { data: existingRoles } = await supabase
