@@ -1,53 +1,35 @@
 
 
-## A published oldal hibáinak javítása
+## Foglalások szerkesztése és törlése az admin felületen
 
-Három fő problémát találtam, amelyek miatt az éles oldalon nem működnek a dolgok.
+A jelenlegi admin foglalás-kezelő oldalon csak megtekintés és státusz-változtatás lehetseges. Az alabbiak szerint bovitjuk a funkcionalitast.
 
-### 1. A szálláshely adatai nem jelennek meg (property_settings)
+### Uj funkciok
 
-**Ok**: A `property_settings_public` nézet `security_invoker=on` beállítással lett létrehozva. Ez azt jelenti, hogy a nézet a lekérő felhasználó jogosultságaival fut -- de az alaptáblán (`property_settings`) csak adminoknak van SELECT joga. Így a vendégek (nem bejelentkezett felhasználók) a nézeten keresztül sem látnak semmit.
+**1. Foglalás szerkesztése (minden statuszra)**
+- Szerkesztheto mezok: erkezes datuma, tavozas datuma, szobatipus, vegosszeg
+- A szerkesztes egy kulon dialogen tortenik, amely a reszletek dialogbol nyilik
+- A szobatipus valasztashoz a `room_types` tablabol toltjuk be az aktiv szobatipusokat
 
-**Javítás**: Újra létrehozzuk a nézetet `security_invoker=off` beállítással (vagy anélkül), hogy a nézet a tulajdonos (postgres) jogaival fusson, és az adatok publikusan olvashatók legyenek. A nézet már most is kizárja az érzékeny mezőket (pl. `admin_email`, `booking_email_template`, `deposit_percent`).
+**2. Foglalás törlése (minden statuszra)**
+- Megerosito dialog (AlertDialog) a torles elott
+- A torles vegleges, nem visszavonhato
 
-### 2. A foglalás-keresés nem működik helyesen (bookings tábla)
+### Technikai reszletek
 
-**Ok**: A keresési logika a `bookings` táblából próbálja lekérni a meglévő foglalásokat az elérhetőség kiszámításához, de a `bookings` tábla SELECT szabálya csak adminoknak engedélyezi az olvasást. Így a vendég-oldali keresés nem látja a meglévő foglalásokat, és olyan szobákat is elérhetőnek mutat, amelyek valójában foglaltak.
+**Adatbazis**: Nem szukseges migracio. Az RLS mar engedelyezi az adminoknak az UPDATE es DELETE muveleteket a `bookings` tablan.
 
-**Javítás**: Létrehozunk egy `bookings_availability` nézetet, amely csak a `room_type_id`, `check_in`, `check_out` és `status` mezőket tartalmazza (személyes adatok nélkül), és `security_invoker=off` beállítással fut. A keresési logikát átírjuk, hogy ezt a nézetet használja.
+**Modositando fajl**: `src/pages/admin/AdminBookings.tsx`
 
-### 3. Az admin belépés nem működik az éles oldalon
+Valtozasok:
+- Uj `Booking` interface bovitese `room_type_id` mezoval
+- Uj `room_types` lekerese a szobatipus-valasztohoz
+- Uj szerkeszto dialog (check_in, check_out, room_type_id, total_price mezokkel)
+- Uj torles funkcio megerosito dialoggal
+- A reszletek dialogban "Szerkesztes" es "Torles" gombok megjelenese minden statusznal
+- A tabla lekeresbe a `room_types (id, name)` kapcsolat is bekerül a szobatipus nev megjelenithesehez
 
-**Ok**: A Lovable Cloud rendszerében a Test és Live környezet **adatai elkülönülnek**. Az admin felhasználó (`admin@pms.hu`) csak a Test környezetben létezik -- a publikálás csak a kódot és a sémát viszi át, az adatokat (felhasználók, szobák, beállítások) nem.
-
-**Javítás**: Az admin felhasználót a Live környezetben is létre kell hozni a `create-admin` Edge Function meghívásával. Ehhez a publikálás után a Live környezetben kell futtatni a funkciót.
-
----
-
-### Technikai részletek
-
-**Adatbázis migráció:**
-
-```sql
--- 1. Nézet újraépítése security_invoker nélkül
-DROP VIEW IF EXISTS property_settings_public;
-CREATE VIEW property_settings_public AS
-  SELECT id, name, description, address, phone, email,
-         latitude, longitude, guest_fields, created_at, updated_at
-  FROM property_settings;
-GRANT SELECT ON property_settings_public TO anon, authenticated;
-
--- 2. Foglalás-elérhetőség nézet létrehozása
-CREATE VIEW bookings_availability AS
-  SELECT room_type_id, check_in, check_out, status
-  FROM bookings
-  WHERE status IN ('pending', 'confirmed');
-GRANT SELECT ON bookings_availability TO anon, authenticated;
-```
-
-**Kódmódosítás:**
-- `src/pages/Index.tsx` (178-184. sor): A `bookings` tábla lekérést `bookings_availability` nézetre cseréljük.
-
-**Live környezet admin létrehozása:**
-- Publikálás után meghívjuk a `create-admin` Edge Functiont a Live URL-en, az `ADMIN_CREATION_SECRET` használatával.
-
+**UI elemek**:
+- Ceruza ikon a szerkeszteshez, Kuka ikon a torleshez a tabla soraiban
+- Szerkeszto dialog: datumvalaszto inputok, szobatipus legordulo (Select), osszeg szam mezo
+- Torles megerosito: AlertDialog "Biztosan torolni szeretned?" szoveggel
