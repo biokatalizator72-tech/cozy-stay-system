@@ -417,7 +417,7 @@ export default function BookingPage() {
             {/* Calendar */}
             <Card>
               <CardHeader>
-                <CardTitle className="font-display">Válasszon dátumot</CardTitle>
+                <CardTitle className="font-display">Dátum megváltoztatása</CardTitle>
               </CardHeader>
               <CardContent>
                 <Calendar
