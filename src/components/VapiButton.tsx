@@ -25,12 +25,11 @@ const VapiButton = () => {
     <button
       onClick={handleClick}
       aria-label="Hangasszisztens indítása"
+      className="vapi-btn"
       style={{
         position: "fixed",
         bottom: "24px",
         right: "24px",
-        width: "250px",
-        height: "250px",
         borderRadius: "50%",
         overflow: "hidden",
         border: "none",
@@ -40,6 +39,14 @@ const VapiButton = () => {
         boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
       }}
     >
+      <style>{`
+        .vapi-btn { width: 250px; height: 250px; }
+        @media (max-width: 768px) {
+          .vapi-btn { width: 110px; height: 110px; }
+          .vapi-btn .vapi-label { font-size: 9px; padding-bottom: 8px; letter-spacing: 0.08em; }
+          .vapi-btn .vapi-overlay { padding-bottom: 0; }
+        }
+      `}</style>
       <img
         src={eszterImg}
         alt="Eszter asszisztens"
@@ -50,8 +57,8 @@ const VapiButton = () => {
           display: "block",
         }}
       />
-      {/* Sötétített sáv a gomb alján */}
       <div
+        className="vapi-overlay"
         style={{
           position: "absolute",
           bottom: 0,
@@ -67,6 +74,7 @@ const VapiButton = () => {
         }}
       >
         <span
+          className="vapi-label"
           style={{
             color: "#ffffff",
             fontWeight: 700,
