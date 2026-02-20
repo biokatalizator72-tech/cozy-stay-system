@@ -1,35 +1,55 @@
 
+## Vapi lebegő asszisztens gomb hozzáadása
 
-## Foglalások szerkesztése és törlése az admin felületen
+### Összefoglalás
 
-A jelenlegi admin foglalás-kezelő oldalon csak megtekintés és státusz-változtatás lehetseges. Az alabbiak szerint bovitjuk a funkcionalitast.
+Egy kerek, 250px átmérőjű lebegő gombot adunk a jobb alsó sarokba, amelynek háttere az "Eszter" asszisztens képe. A gomb megnyomásakor elindul a Vapi hangasszisztens.
 
-### Uj funkciok
+### Megvalósítás lépései
 
-**1. Foglalás szerkesztése (minden statuszra)**
-- Szerkesztheto mezok: erkezes datuma, tavozas datuma, szobatipus, vegosszeg
-- A szerkesztes egy kulon dialogen tortenik, amely a reszletek dialogbol nyilik
-- A szobatipus valasztashoz a `room_types` tablabol toltjuk be az aktiv szobatipusokat
+**1. Vapi script hozzáadása (`index.html`)**
 
-**2. Foglalás törlése (minden statuszra)**
-- Megerosito dialog (AlertDialog) a torles elott
-- A torles vegleges, nem visszavonhato
+A Vapi SDK script-et a `<body>` végéhez adjuk hozzá CDN-ről:
+```html
+<script src="https://cdn.vapi.ai/vapi-web-sdk.js"></script>
+```
 
-### Technikai reszletek
+**2. Új komponens: `VapiButton` (`src/components/VapiButton.tsx`)**
 
-**Adatbazis**: Nem szukseges migracio. Az RLS mar engedelyezi az adminoknak az UPDATE es DELETE muveleteket a `bookings` tablan.
+Egy önálló React komponenst hozunk létre a gombhoz:
+- **Stílus**: `fixed`, jobb alsó sarok (`bottom-6 right-6`), `z-50`
+- **Méret**: 250px × 250px, `border-radius: 50%` (tökéletes kör)
+- **Háttér**: `https://siralyhotel.hu/wp-content/uploads/2026/02/eszter1.png` kép, `object-cover` módban
+- **"SEGÍTHETEK?" sáv**: A gomb alján félkör alakú sötétített sáv (félig átlátszó fekete overlay), fehér félkövér felirattal
+- **Kattintásra**: `window.vapiSDK.start()` hívása a megadott Public Key-jel és Assistant ID-val
+- **TypeScript**: `window.vapiSDK` deklarálva globális típusként
 
-**Modositando fajl**: `src/pages/admin/AdminBookings.tsx`
+**Vapi konfiguráció:**
+- Public Key: `5181a96c-e84b-4306-a267-1c0e97f20139`
+- Assistant ID: `1b89fb88-f113-475b-85ec-ef4facba0a62`
 
-Valtozasok:
-- Uj `Booking` interface bovitese `room_type_id` mezoval
-- Uj `room_types` lekerese a szobatipus-valasztohoz
-- Uj szerkeszto dialog (check_in, check_out, room_type_id, total_price mezokkel)
-- Uj torles funkcio megerosito dialoggal
-- A reszletek dialogban "Szerkesztes" es "Torles" gombok megjelenese minden statusznal
-- A tabla lekeresbe a `room_types (id, name)` kapcsolat is bekerül a szobatipus nev megjelenithesehez
+**3. Gomb beillesztése az `App.tsx`-be**
 
-**UI elemek**:
-- Ceruza ikon a szerkeszteshez, Kuka ikon a torleshez a tabla soraiban
-- Szerkeszto dialog: datumvalaszto inputok, szobatipus legordulo (Select), osszeg szam mezo
-- Torles megerosito: AlertDialog "Biztosan torolni szeretned?" szoveggel
+A `VapiButton` komponenst az `App.tsx`-be importáljuk és a `<BrowserRouter>` blokkon kívül, de a `<TooltipProvider>` belsejébe helyezzük – így minden oldalon megjelenik, beleértve a vendégoldalt és az admin felületet is.
+
+### Vizuális megjelenés
+
+```text
+┌─────────────────────────────────────────┐
+│                                         │
+│   [Eszter képe – kerek, 250×250px]     │
+│                                         │
+│  ╔═══════════════════════════════════╗  │
+│  ║        SEGÍTHETEK?               ║  │ ← sötétített sáv
+│  ╚═══════════════════════════════════╝  │
+└─────────────────────────────────────────┘
+        (jobb alsó sarok, fixed)
+```
+
+### Módosítandó / létrehozandó fájlok
+
+| Fájl | Módosítás |
+|---|---|
+| `index.html` | Vapi SDK script tag hozzáadása |
+| `src/components/VapiButton.tsx` | Új komponens létrehozása |
+| `src/App.tsx` | VapiButton importálása és beillesztése |
