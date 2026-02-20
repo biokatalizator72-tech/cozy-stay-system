@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import VapiButton from "@/components/VapiButton";
 import Index from "./pages/Index";
 import BookingPage from "./pages/BookingPage";
 import AdminPage from "./pages/admin";
@@ -23,6 +24,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <VapiButton />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
