@@ -1,3 +1,5 @@
+import eszterImg from "@/assets/eszter1.png";
+
 declare global {
   interface Window {
     vapiSDK: {
@@ -39,7 +41,7 @@ const VapiButton = () => {
       }}
     >
       <img
-        src="https://siralyhotel.hu/wp-content/uploads/2026/02/eszter1.png"
+        src={eszterImg}
         alt="Eszter asszisztens"
         style={{
           width: "100%",
