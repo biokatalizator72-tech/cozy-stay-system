@@ -24,8 +24,8 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <VapiButton />
         <BrowserRouter>
+          <VapiButton />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/book/:roomTypeId" element={<BookingPage />} />

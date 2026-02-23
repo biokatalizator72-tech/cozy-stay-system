@@ -1,4 +1,5 @@
 import eszterImg from "@/assets/eszter1.png";
+import { useLocation } from "react-router-dom";
 
 declare global {
   interface Window {
@@ -12,6 +13,9 @@ const VAPI_PUBLIC_KEY = "5181a96c-e84b-4306-a267-1c0e97f20139";
 const VAPI_ASSISTANT_ID = "1b89fb88-f113-475b-85ec-ef4facba0a62";
 
 const VapiButton = () => {
+  const location = useLocation();
+  if (location.pathname.startsWith("/admin")) return null;
+
   const handleClick = () => {
     if (window.vapiSDK) {
       window.vapiSDK.start({
