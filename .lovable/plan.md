@@ -1,37 +1,32 @@
 
-## "SEGÍTHETEK?" felirat javítása mobilon
+
+## Vapi gomb elrejtése az admin oldalon
 
 ### Probléma
 
-A 110px átmérőjű kerek gombon belül a „SEGÍTHETEK?" felirat nem fér el, mert:
-- A betűméret még 9px-nél is túl széles a szöveg a `letter-spacing: 0.08em` értékkel
-- A szöveg kilóg a kör szélén
+A Vapi asszisztens gomb az admin felületen is megjelenik és kitakarja a tartalmat (pl. ártáblát), ami zavaró az adminisztrátorok számára.
 
 ### Megoldás
 
-A `src/components/VapiButton.tsx` fájlban a mobilos media query-ben az alábbi módosításokat végezzük:
+A `VapiButton` komponenst áthelyezzük a `BrowserRouter`-en belülre, és a `useLocation` hook segítségével ellenőrizzük az aktuális útvonalat. Ha az `/admin` útvonallal kezdődik, a gomb nem renderelődik.
 
-**Jelenlegi mobilos CSS:**
-```css
-.vapi-btn .vapi-label { font-size: 9px; padding-bottom: 8px; letter-spacing: 0.08em; }
-```
-
-**Új mobilos CSS:**
-```css
-.vapi-btn .vapi-label { font-size: 7px; padding-bottom: 6px; letter-spacing: 0.04em; white-space: nowrap; }
-```
-
-### Változások részletesen
-
-| Tulajdonság | Előtte | Utána |
-|---|---|---|
-| `font-size` | 9px | 7px |
-| `letter-spacing` | 0.08em | 0.04em |
-| `padding-bottom` | 8px | 6px |
-| `white-space` | (nincs) | nowrap |
-
-### Módosítandó fájl
+### Módosítandó fájlok
 
 | Fájl | Módosítás |
 |---|---|
-| `src/components/VapiButton.tsx` | Mobilos label CSS finomhangolása |
+| `src/components/VapiButton.tsx` | `useLocation` hozzáadása, `/admin` útvonal ellenőrzése -- ha admin oldalon vagyunk, `return null` |
+| `src/App.tsx` | `VapiButton` áthelyezése a `BrowserRouter`-en belülre (hogy a `useLocation` működjön) |
+
+### Technikai részletek
+
+**`VapiButton.tsx`** -- a komponens elejére:
+```tsx
+import { useLocation } from "react-router-dom";
+
+// A komponensen belül:
+const location = useLocation();
+if (location.pathname.startsWith("/admin")) return null;
+```
+
+**`App.tsx`** -- a `<VapiButton />` átkerül a `<BrowserRouter>` belsejébe, a `<Routes>` mellé.
+
