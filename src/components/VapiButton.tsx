@@ -1,27 +1,29 @@
+import Vapi from "@vapi-ai/web";
 import eszterImg from "@/assets/eszter1.png";
 import { useLocation } from "react-router-dom";
 
-declare global {
-  interface Window {
-    vapiSDK: {
-      start: (config: { apiKey: string; assistant: string }) => void;
-    };
-  }
-}
-
 const VAPI_PUBLIC_KEY = "pk-5181a96c-e84b-4306-a267-1c0e97f20139";
 const VAPI_ASSISTANT_ID = "1b89fb88-f113-475b-85ec-ef4facba0a62";
+
+let vapiInstance: Vapi | null = null;
+
+const getVapi = () => {
+  if (!vapiInstance) {
+    vapiInstance = new Vapi(VAPI_PUBLIC_KEY);
+  }
+  return vapiInstance;
+};
 
 const VapiButton = () => {
   const location = useLocation();
   if (location.pathname.startsWith("/admin")) return null;
 
   const handleClick = () => {
-    if (window.vapiSDK) {
-      window.vapiSDK.start({
-        apiKey: VAPI_PUBLIC_KEY,
-        assistant: VAPI_ASSISTANT_ID,
-      });
+    try {
+      const vapi = getVapi();
+      vapi.start(VAPI_ASSISTANT_ID);
+    } catch (error) {
+      console.error("Vapi hiba:", error);
     }
   };
 
