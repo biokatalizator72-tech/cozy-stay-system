@@ -1,32 +1,21 @@
 
 
-## Vapi gomb elrejtése az admin oldalon
+## Vapi API kulcs javítása és kapcsolat ellenőrzése
 
-### Probléma
+### 1. API kulcs javítása
+A `src/components/VapiButton.tsx` fájlban a `VAPI_PUBLIC_KEY` konstans értékét módosítjuk:
+- **Jelenlegi**: `5181a96c-e84b-4306-a267-1c0e97f20139`
+- **Új**: `pk-5181a96c-e84b-4306-a267-1c0e97f20139`
 
-A Vapi asszisztens gomb az admin felületen is megjelenik és kitakarja a tartalmat (pl. ártáblát), ami zavaró az adminisztrátorok számára.
+### 2. Kapcsolat ellenőrzése
+A módosítás után a böngésző automatizációval ellenőrizzük:
+- Megnyitjuk az előnézetet
+- Rákattintunk a Vapi gombra
+- Megnézzük a konzol logokat és hálózati kéréseket, hogy a Vapi SDK sikeresen csatlakozik-e
 
-### Megoldás
-
-A `VapiButton` komponenst áthelyezzük a `BrowserRouter`-en belülre, és a `useLocation` hook segítségével ellenőrizzük az aktuális útvonalat. Ha az `/admin` útvonallal kezdődik, a gomb nem renderelődik.
-
-### Módosítandó fájlok
+### Módosítandó fájl
 
 | Fájl | Módosítás |
 |---|---|
-| `src/components/VapiButton.tsx` | `useLocation` hozzáadása, `/admin` útvonal ellenőrzése -- ha admin oldalon vagyunk, `return null` |
-| `src/App.tsx` | `VapiButton` áthelyezése a `BrowserRouter`-en belülre (hogy a `useLocation` működjön) |
-
-### Technikai részletek
-
-**`VapiButton.tsx`** -- a komponens elejére:
-```tsx
-import { useLocation } from "react-router-dom";
-
-// A komponensen belül:
-const location = useLocation();
-if (location.pathname.startsWith("/admin")) return null;
-```
-
-**`App.tsx`** -- a `<VapiButton />` átkerül a `<BrowserRouter>` belsejébe, a `<Routes>` mellé.
+| `src/components/VapiButton.tsx` | `VAPI_PUBLIC_KEY` frissítése `pk-` prefixszel |
 
