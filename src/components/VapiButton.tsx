@@ -9,7 +9,7 @@ declare global {
   }
 }
 
-const VAPI_PUBLIC_KEY = "5181a96c-e84b-4306-a267-1c0e97f20139";
+const VAPI_PUBLIC_KEY = "pk-5181a96c-e84b-4306-a267-1c0e97f20139";
 const VAPI_ASSISTANT_ID = "1b89fb88-f113-475b-85ec-ef4facba0a62";
 
 const VapiButton = () => {
