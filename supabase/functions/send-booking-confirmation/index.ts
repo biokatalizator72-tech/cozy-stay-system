@@ -30,7 +30,7 @@ serve(async (req) => {
     // Fetch email template and property name
     const { data: settings } = await supabase
       .from("property_settings")
-      .select("booking_email_template, name, deposit_percent")
+      .select("booking_email_template, name, deposit_percent, admin_email")
       .limit(1)
       .single();
 
@@ -62,6 +62,28 @@ serve(async (req) => {
     });
 
     console.log("Booking confirmation email sent:", emailResponse);
+
+    // Admin értesítés küldése
+    if (settings?.admin_email) {
+      try {
+        await resend.emails.send({
+          from: `${propertyName} <info@siralyhotel.hu>`,
+          to: [settings.admin_email],
+          subject: "Új foglalás érkezett",
+          html: `<h2>Foglalás adatai</h2>
+<ul>
+  <li><b>Dátum:</b> ${check_in} – ${check_out}</li>
+  <li><b>Szoba:</b> ${room_name}</li>
+  <li><b>Ár:</b> ${totalPriceNum.toLocaleString("hu-HU")} Ft</li>
+  <li><b>Vendég neve:</b> ${guest_name}</li>
+  <li><b>Vendég email:</b> ${guest_email}</li>
+</ul>`,
+        });
+        console.log("Admin notification sent to", settings.admin_email);
+      } catch (adminErr: any) {
+        console.error("Admin notification error:", adminErr);
+      }
+    }
 
     return new Response(JSON.stringify(emailResponse), {
       status: 200,
