@@ -315,7 +315,9 @@ export default function AdminPricing() {
             if (priceNum) updateData.price_per_night = priceNum;
             if (minNightsNum) updateData.min_nights = minNightsNum;
             await supabase.from('pricing_rules').update(updateData).eq('id', existingRule.id);
-          } else if (priceNum) {
+          } else {
+            const roomType = roomTypes.find(rt => rt.id === bulkRoomTypeId);
+            const effectivePrice = priceNum || roomType?.base_price || 0;
             const roomId = rooms.find(r => r.room_type_id === bulkRoomTypeId)?.id;
             if (!roomId) {
               console.error('No room found for room_type_id:', bulkRoomTypeId);
@@ -326,7 +328,7 @@ export default function AdminPricing() {
               room_type_id: bulkRoomTypeId,
               start_date: dateStr,
               end_date: dateStr,
-              price_per_night: priceNum,
+              price_per_night: effectivePrice,
               min_nights: minNightsNum || 1,
             }]);
           }
