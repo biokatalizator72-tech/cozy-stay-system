@@ -1,58 +1,48 @@
 
-## Admin értesítő email javítása webes foglalásokhoz
+
+## Tömeges kitöltés javítása -- részleges frissítés támogatása
 
 ### Probléma
-A webes foglalási űrlap (`BookingPage.tsx`) közvetlenül beszúrja a foglalást az adatbázisba, majd csak a `send-booking-confirmation` edge function-t hívja meg, ami kizárólag a vendégnek küld visszaigazolást. Az admin értesítés csak a `create-booking` edge function-ben van implementálva, amit kizárólag a Vapi hangasszisztens használ.
+A `saveBulk` funkció (`AdminPricing.tsx`, 283-363. sorok) nem kezeli helyesen, ha csak egy paramétert adunk meg:
+- Ha csak a **min. napok** van kitöltve, de nincs meglevo pricing rule az adott napra, nem tortenik semmi (mert az `else if (priceNum)` ag nem teljesul)
+- Ha nincs meglevo rule es csak min. napokat allitunk, az uj rule-hoz nem tudja az arat -- ilyenkor a szobatipus alaparat kell hasznalni
 
-### Megoldás
-A `send-booking-confirmation` edge function-t kibővítjük, hogy az admin email-t is elküldje a vendég visszaigazolás mellett. Így minden foglalás -- legyen az webes vagy Vapi-s -- admin értesítést is generál.
+### Megoldas
 
-### Lépések
+A `saveBulk` fuggvenyt (`src/pages/admin/AdminPricing.tsx`, 283-363. sorok) modositjuk:
 
-**1. `supabase/functions/send-booking-confirmation/index.ts` kibővítése**
-- A vendég email elküldése után lekérdezzük a `property_settings` táblából az `admin_email` mezőt (már most is lekérdezi a `name`-et, tehát a query-t ki kell bővíteni)
-- Ha van `admin_email`, küldünk egy admin értesítő emailt is a foglalás adataival
-- Az admin email tartalma a `create-booking` function-ben már meglévő formátumot követi
+1. **Meglevo rule eseten**: csak a kitoltott mezoket frissitjuk (ez mar nagyreszben mukodik)
+2. **Uj rule eseten**: ha nincs `priceNum`, de van `minNightsNum`, akkor a szobatipus `base_price` erteket hasznaljuk arnak, es letrehozzuk a rule-t a megadott min_nights ertekkel
+3. **Kapacitas**: ez mar helyesen mukodik kulon is
 
-**2. `create-booking/index.ts` admin email duplikáció eltávolítása (opcionális)**
-- Ha a `create-booking` is meghívja a `send-booking-confirmation`-t, akkor ott az admin email részt el lehet távolítani a duplikáció elkerülésére
-- Alternatíva: a `create-booking`-ban meghagyni, mivel az közvetlenül is működik
+### Technikai reszletek
 
-### Technikai részletek
+A `saveBulk` fuggvenyben a 304-333. sorok kozt a kovetkezo logikai valtozas szukseges:
 
-A `send-booking-confirmation/index.ts`-ben a vendég email elküldése után:
-
+**Jelenlegi logika** (318. sor):
 ```typescript
-// Admin értesítés küldése
-if (settings?.admin_email) {
-  try {
-    await resend.emails.send({
-      from: `${propertyName} <info@siralyhotel.hu>`,
-      to: [settings.admin_email],
-      subject: "Új foglalás érkezett",
-      html: `<h2>Foglalás adatai</h2>
-<ul>
-  <li><b>Dátum:</b> ${check_in} – ${check_out}</li>
-  <li><b>Szoba:</b> ${room_name}</li>
-  <li><b>Ár:</b> ${totalPriceNum.toLocaleString("hu-HU")} Ft</li>
-  <li><b>Vendég neve:</b> ${guest_name}</li>
-  <li><b>Vendég email:</b> ${guest_email}</li>
-</ul>`,
-    });
-    console.log("Admin notification sent to", settings.admin_email);
-  } catch (adminErr) {
-    console.error("Admin notification error:", adminErr);
-  }
+} else if (priceNum) {
+  // insert new rule -- ONLY if price is given
 }
 ```
 
-A `property_settings` lekérdezés bővítése:
+**Javitott logika**:
 ```typescript
-.select("booking_email_template, name, deposit_percent, admin_email")
+} else {
+  // insert new rule -- use base_price if no price given
+  const effectivePrice = priceNum || roomType.base_price;
+  // create rule with effectivePrice and minNightsNum
+}
 ```
 
-### Módosítandó fájl
+Ez biztositja, hogy:
+- Ha csak arat adunk meg: letrejon a rule az arral es min_nights=1 alapertekkel
+- Ha csak min. napokat adunk meg: letrejon a rule a szobatipus alaparaval es a megadott min_nights-szal
+- Ha mindkettot megadjuk: mindketto a megadott ertek lesz
+
+### Modositando fajl
 
 | Fajl | Modositas |
 |---|---|
-| `supabase/functions/send-booking-confirmation/index.ts` | `admin_email` lekérdezés és admin értesítő email küldés hozzáadása |
+| `src/pages/admin/AdminPricing.tsx` | `saveBulk` fuggveny: uj rule letrehozasa alaparral, ha csak min_nights van megadva |
+
