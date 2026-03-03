@@ -1,48 +1,78 @@
 
 
-## Tömeges kitöltés javítása -- részleges frissítés támogatása
+## Minimum éjszakák ellenőrzése a vendégoldalon
 
 ### Probléma
-A `saveBulk` funkció (`AdminPricing.tsx`, 283-363. sorok) nem kezeli helyesen, ha csak egy paramétert adunk meg:
-- Ha csak a **min. napok** van kitöltve, de nincs meglevo pricing rule az adott napra, nem tortenik semmi (mert az `else if (priceNum)` ag nem teljesul)
-- Ha nincs meglevo rule es csak min. napokat allitunk, az uj rule-hoz nem tudja az arat -- ilyenkor a szobatipus alaparat kell hasznalni
+A `pricing_rules` táblában be van állítva a `min_nights` érték (pl. júliusban min. 4 éj), de a vendégoldali keresés ezt egyáltalán nem ellenőrzi. A felhasználó 1 éjszakára is tud foglalni, holott a minimum 4 lenne.
 
-### Megoldas
+### Megoldás
+A keresési logikában (`Index.tsx`) a pricing rules lekérdezésekor a `min_nights` mezőt is le kell kérni, majd szobatípusonként ellenőrizni kell, hogy a tartózkodás hossza eléri-e a minimum éjszakák számát. Ha nem éri el, a szobatípust nem szűrjük ki teljesen, hanem a kártyán megjelenítjük a figyelmeztetést és letiltjuk a foglalás gombot.
 
-A `saveBulk` fuggvenyt (`src/pages/admin/AdminPricing.tsx`, 283-363. sorok) modositjuk:
+### Lépések
 
-1. **Meglevo rule eseten**: csak a kitoltott mezoket frissitjuk (ez mar nagyreszben mukodik)
-2. **Uj rule eseten**: ha nincs `priceNum`, de van `minNightsNum`, akkor a szobatipus `base_price` erteket hasznaljuk arnak, es letrehozzuk a rule-t a megadott min_nights ertekkel
-3. **Kapacitas**: ez mar helyesen mukodik kulon is
+**1. `src/pages/Index.tsx` -- min_nights lekérdezés és ellenőrzés**
+- A pricing rules lekérdezésébe felvenni a `min_nights` mezőt
+- Szobatípusonként meghatározni a maximális `min_nights` értéket a tartózkodási napokra vonatkozóan
+- Új state: `minNightsMap: Record<string, number>` -- szobatípusonként a szükséges minimum éjszakák száma
+- Ha a tartózkodás rövidebb, mint a minimum, a szobatípust megjelenítjük, de jelezzük a korlátozást
 
-### Technikai reszletek
+**2. `src/components/guest/RoomCard.tsx` -- figyelmeztetés megjelenítése**
+- Új prop: `minNightsRequired?: number` -- ha a tartózkodás nem éri el ezt az értéket
+- Ha `minNightsRequired` meg van adva és nagyobb mint a tartózkodás hossza:
+  - Sárga figyelmeztetés szöveg: "A minimum foglalás X éj ebben az időszakban!"
+  - A "Foglalás" gomb letiltása (disabled)
+  - Az ár továbbra is megjelenik tájékoztatásul
 
-A `saveBulk` fuggvenyben a 304-333. sorok kozt a kovetkezo logikai valtozas szukseges:
+### Technikai részletek
 
-**Jelenlegi logika** (318. sor):
+**Index.tsx -- pricing rules lekérdezés bővítése (239-242. sor):**
 ```typescript
-} else if (priceNum) {
-  // insert new rule -- ONLY if price is given
-}
+const { data: pricingRules } = await supabase
+  .from('pricing_rules')
+  .select('room_type_id, start_date, end_date, price_per_night, min_nights')
+  .in('room_type_id', roomTypeIds);
 ```
 
-**Javitott logika**:
+**Index.tsx -- min_nights számítás (a price számítás után):**
 ```typescript
-} else {
-  // insert new rule -- use base_price if no price given
-  const effectivePrice = priceNum || roomType.base_price;
-  // create rule with effectivePrice and minNightsNum
-}
+const minNightsPerRoom: Record<string, number> = {};
+sorted.forEach(rt => {
+  let maxMinNights = 1;
+  stayDates.forEach(dateStr => {
+    const rule = pricingRules?.find(r =>
+      r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
+    );
+    if (rule?.min_nights && rule.min_nights > maxMinNights) {
+      maxMinNights = rule.min_nights;
+    }
+  });
+  minNightsPerRoom[rt.id] = maxMinNights;
+});
+setMinNightsMap(minNightsPerRoom);
 ```
 
-Ez biztositja, hogy:
-- Ha csak arat adunk meg: letrejon a rule az arral es min_nights=1 alapertekkel
-- Ha csak min. napokat adunk meg: letrejon a rule a szobatipus alaparaval es a megadott min_nights-szal
-- Ha mindkettot megadjuk: mindketto a megadott ertek lesz
+**RoomCard.tsx -- figyelmeztetés és gomb letiltás:**
+```tsx
+// Új prop
+minNightsRequired?: number;
 
-### Modositando fajl
+// A kártyán, ha minNightsRequired > nights:
+{minNightsRequired && nights && minNightsRequired > nights && (
+  <div className="text-amber-600 bg-amber-50 rounded-lg p-3 text-sm font-medium mb-3">
+    A minimum foglalás {minNightsRequired} éj ebben az időszakban!
+  </div>
+)}
 
-| Fajl | Modositas |
+// A Foglalás gomb:
+<Button disabled={!!(minNightsRequired && nights && minNightsRequired > nights)}>
+  Foglalás
+</Button>
+```
+
+### Módosítandó fájlok
+
+| Fájl | Módosítás |
 |---|---|
-| `src/pages/admin/AdminPricing.tsx` | `saveBulk` fuggveny: uj rule letrehozasa alaparral, ha csak min_nights van megadva |
+| `src/pages/Index.tsx` | `min_nights` lekérdezés, `minNightsMap` state, átadás RoomCard-nak |
+| `src/components/guest/RoomCard.tsx` | `minNightsRequired` prop, figyelmeztetés megjelenítése, gomb letiltása |
 
