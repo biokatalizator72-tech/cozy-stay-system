@@ -39,9 +39,10 @@ interface RoomCardProps {
   originalPrice?: number;
   discountPercent?: number;
   nights?: number;
+  minNightsRequired?: number;
 }
 
-export function RoomCard({ room, images, index, checkIn, checkOut, adults, children, totalPrice, originalPrice, discountPercent, nights }: RoomCardProps) {
+export function RoomCard({ room, images, index, checkIn, checkOut, adults, children, totalPrice, originalPrice, discountPercent, nights, minNightsRequired }: RoomCardProps) {
   const [currentImage, setCurrentImage] = useState(0);
   const hasImages = images.length > 0;
 
@@ -168,6 +169,13 @@ export function RoomCard({ room, images, index, checkIn, checkOut, adults, child
           </div>
         )}
 
+        {/* Min nights warning */}
+        {minNightsRequired && nights && minNightsRequired > nights && (
+          <div className="text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 rounded-lg p-3 text-sm font-medium mb-3 border border-amber-200 dark:border-amber-800">
+            ⚠️ A minimum foglalás {minNightsRequired} éj ebben az időszakban!
+          </div>
+        )}
+
         <div className="flex items-center justify-between pt-4 border-t">
           <div>
             {discountPercent && discountPercent > 0 && originalPrice ? (
@@ -191,12 +199,19 @@ export function RoomCard({ room, images, index, checkIn, checkOut, adults, child
               {totalPrice != null && nights ? `${nights} éjszaka összesen` : '/ éjszaka'}
             </div>
           </div>
-          <Link to={buildBookingUrl()}>
-            <Button className="group/btn">
+          {minNightsRequired && nights && minNightsRequired > nights ? (
+            <Button disabled className="opacity-50">
               Foglalás
-              <ArrowRight className="ml-2 h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
-          </Link>
+          ) : (
+            <Link to={buildBookingUrl()}>
+              <Button className="group/btn">
+                Foglalás
+                <ArrowRight className="ml-2 h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+              </Button>
+            </Link>
+          )}
         </div>
       </CardContent>
     </Card>
