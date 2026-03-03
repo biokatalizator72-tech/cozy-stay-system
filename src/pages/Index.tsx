@@ -66,6 +66,7 @@ export default function Index() {
   const [originalPrices, setOriginalPrices] = useState<Record<string, number>>({});
   const [discountPercent, setDiscountPercent] = useState(0);
   const [nights, setNights] = useState(0);
+  const [minNightsMap, setMinNightsMap] = useState<Record<string, number>>({});
   const [isSearching, setIsSearching] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState(10);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -238,7 +239,7 @@ export default function Index() {
     const roomTypeIds = sorted.map(rt => rt.id);
     const { data: pricingRules } = await supabase
       .from('pricing_rules')
-      .select('room_type_id, start_date, end_date, price_per_night')
+      .select('room_type_id, start_date, end_date, price_per_night, min_nights')
       .in('room_type_id', roomTypeIds);
 
     const calculatedPrices: Record<string, number> = {};
@@ -284,6 +285,22 @@ export default function Index() {
         discountedPrices[id] = Math.round(price * (1 - dp / 100));
       });
     }
+
+    // Calculate min_nights per room type
+    const minNightsPerRoom: Record<string, number> = {};
+    sorted.forEach(rt => {
+      let maxMinNights = 1;
+      stayDates.forEach(dateStr => {
+        const rule = pricingRules?.find(r =>
+          r.room_type_id === rt.id && r.start_date <= dateStr && r.end_date >= dateStr
+        );
+        if (rule?.min_nights && rule.min_nights > maxMinNights) {
+          maxMinNights = rule.min_nights;
+        }
+      });
+      minNightsPerRoom[rt.id] = maxMinNights;
+    });
+    setMinNightsMap(minNightsPerRoom);
 
     setOriginalPrices(dp > 0 ? calculatedPrices : {});
     setTotalPrices(dp > 0 ? discountedPrices : calculatedPrices);
@@ -380,6 +397,7 @@ export default function Index() {
                     originalPrice={originalPrices[roomType.id]}
                     discountPercent={discountPercent}
                     nights={nights}
+                    minNightsRequired={minNightsMap[roomType.id]}
                   />
                 ))}
               </div>
