@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
-import VapiButton from "@/components/VapiButton";
+// import VapiButton from "@/components/VapiButton"; // Ideiglenesen kikapcsolva
 import Index from "./pages/Index";
 import BookingPage from "./pages/BookingPage";
 import AdminPage from "./pages/admin";
@@ -25,7 +25,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <VapiButton />
+          {/* <VapiButton /> */}{/* Ideiglenesen kikapcsolva */}
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/book/:roomTypeId" element={<BookingPage />} />
