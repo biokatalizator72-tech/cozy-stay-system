@@ -121,7 +121,7 @@ export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, i
                   }
                   if (date && checkOut && checkOut <= date) setCheckOut(undefined);
                 }}
-                disabled={(date) => date < today}
+                disabled={isDateDisabled}
                 locale={hu}
                 initialFocus
                 className="p-3 pointer-events-auto"
