@@ -361,6 +361,7 @@ export default function Index() {
             <SearchForm
               maxCapacity={maxCapacity}
               childAgeBrackets={childAgeBrackets}
+              seasons={seasons}
               onSearch={handleSearch}
               isSearching={isSearching}
             />

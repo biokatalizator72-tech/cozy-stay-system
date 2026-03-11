@@ -126,10 +126,16 @@ export default function AdminPricing() {
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
     setAvailability(availabilityData || []);
+    setSeasons(seasonsData || []);
     if (settingsData?.deposit_percent != null) {
       setDepositPercent(settingsData.deposit_percent);
     }
     setLoading(false);
+  };
+
+  const isDateInSeason = (dateStr: string): boolean => {
+    if (seasons.length === 0) return true;
+    return seasons.some(s => dateStr >= s.start_date && dateStr <= s.end_date);
   };
 
   useEffect(() => {
