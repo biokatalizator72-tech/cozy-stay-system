@@ -21,14 +21,20 @@ export interface GuestCounts {
   children: { bracketId: string; count: number }[];
 }
 
+interface SeasonRange {
+  start_date: string;
+  end_date: string;
+}
+
 interface SearchFormProps {
   maxCapacity: number;
   childAgeBrackets: ChildAgeBracket[];
+  seasons: SeasonRange[];
   onSearch: (checkIn: Date, checkOut: Date, guestCounts: GuestCounts) => void;
   isSearching?: boolean;
 }
 
-export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearching }: SearchFormProps) {
+export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, isSearching }: SearchFormProps) {
   const [checkIn, setCheckIn] = useState<Date | undefined>();
   const [checkOut, setCheckOut] = useState<Date | undefined>();
   const [adults, setAdults] = useState(2);
@@ -39,6 +45,18 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Build season date checker
+  const isDateInSeason = (date: Date): boolean => {
+    if (seasons.length === 0) return true; // no seasons = all dates allowed
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return seasons.some(s => dateStr >= s.start_date && dateStr <= s.end_date);
+  };
+
+  const isDateDisabled = (date: Date): boolean => {
+    if (date < today) return true;
+    return !isDateInSeason(date);
+  };
 
   const totalChildren = Object.values(childCounts).reduce((sum, count) => sum + count, 0);
   const totalGuests = adults + totalChildren;
@@ -103,7 +121,7 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
                   }
                   if (date && checkOut && checkOut <= date) setCheckOut(undefined);
                 }}
-                disabled={(date) => date < today}
+                disabled={isDateDisabled}
                 locale={hu}
                 initialFocus
                 className="p-3 pointer-events-auto"
@@ -135,6 +153,7 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
                 disabled={(date) => {
                   if (date < today) return true;
                   if (checkIn && date <= checkIn) return true;
+                  if (!isDateInSeason(date)) return true;
                   return false;
                 }}
                 locale={hu}

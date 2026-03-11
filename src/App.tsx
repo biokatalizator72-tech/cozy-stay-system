@@ -14,6 +14,7 @@ import AdminPricingRoute from "./pages/admin/PricingRoute";
 import AdminDiscountsRoute from "./pages/admin/DiscountsRoute";
 import AdminBookingsRoute from "./pages/admin/BookingsRoute";
 import AdminSettingsRoute from "./pages/admin/SettingsRoute";
+import AdminSeasonsRoute from "./pages/admin/SeasonsRoute";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/room-types" element={<AdminRoomTypesRoute />} />
             <Route path="/admin/rooms" element={<AdminRoomsRoute />} />
+            <Route path="/admin/seasons" element={<AdminSeasonsRoute />} />
             <Route path="/admin/pricing" element={<AdminPricingRoute />} />
             <Route path="/admin/discounts" element={<AdminDiscountsRoute />} />
             <Route path="/admin/bookings" element={<AdminBookingsRoute />} />

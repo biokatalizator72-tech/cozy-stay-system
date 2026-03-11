@@ -56,6 +56,7 @@ export default function Index() {
   const [roomTypeImages, setRoomTypeImages] = useState<Record<string, RoomTypeImage[]>>({});
   const [propertyImages, setPropertyImages] = useState<PropertyImage[]>([]);
   const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
+  const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [nightDiscounts, setNightDiscounts] = useState<{ min_nights: number; discount_percent: number }[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -110,9 +111,17 @@ export default function Index() {
         .select('min_nights, discount_percent')
         .order('min_nights');
 
+      // Fetch active seasons
+      const { data: seasonsData } = await supabase
+        .from('seasons')
+        .select('start_date, end_date')
+        .eq('is_active', true)
+        .order('start_date');
+
       setProperty(propertyData as any);
       setPropertyImages(propImagesData || []);
       setChildAgeBrackets(bracketsData || []);
+      setSeasons(seasonsData || []);
       setNightDiscounts(nightDiscountsData || []);
       
       const transformed: RoomType[] = (roomTypesData || []).map(rt => ({
@@ -352,6 +361,7 @@ export default function Index() {
             <SearchForm
               maxCapacity={maxCapacity}
               childAgeBrackets={childAgeBrackets}
+              seasons={seasons}
               onSearch={handleSearch}
               isSearching={isSearching}
             />

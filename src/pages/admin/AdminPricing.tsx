@@ -55,6 +55,7 @@ export default function AdminPricing() {
   const [rooms, setRooms] = useState<{ id: string; room_type_id: string | null }[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [availability, setAvailability] = useState<RoomTypeAvailability[]>([]);
+  const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
@@ -115,14 +116,26 @@ export default function AdminPricing() {
       .select('deposit_percent')
       .maybeSingle();
 
+    const { data: seasonsData } = await supabase
+      .from('seasons')
+      .select('start_date, end_date')
+      .eq('is_active', true)
+      .order('start_date');
+
     setRoomTypes(roomTypesData || []);
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
     setAvailability(availabilityData || []);
+    setSeasons(seasonsData || []);
     if (settingsData?.deposit_percent != null) {
       setDepositPercent(settingsData.deposit_percent);
     }
     setLoading(false);
+  };
+
+  const isDateInSeason = (dateStr: string): boolean => {
+    if (seasons.length === 0) return true;
+    return seasons.some(s => dateStr >= s.start_date && dateStr <= s.end_date);
   };
 
   useEffect(() => {
@@ -495,15 +508,18 @@ export default function AdminPricing() {
                             const displayAvail = editedAvail !== undefined ? editedAvail : availCount.toString();
                             const isEdited = !!edited || editedAvail !== undefined;
                             const isUnavailable = parseInt(displayAvail) === 0;
+                            const offSeason = !isDateInSeason(dateStr);
 
                             return (
                               <td
                                 key={dateStr}
                                 className={cn(
                                   "p-0.5 align-top",
-                                  isEdited && "bg-accent/20",
-                                  isUnavailable && !isEdited && "bg-destructive/10"
+                                  offSeason && "bg-muted/50 opacity-50",
+                                  isEdited && !offSeason && "bg-accent/20",
+                                  isUnavailable && !isEdited && !offSeason && "bg-destructive/10"
                                 )}
+                                title={offSeason ? 'Szezonon kívüli nap' : undefined}
                               >
                                 <div className="space-y-0.5">
                                   <Input

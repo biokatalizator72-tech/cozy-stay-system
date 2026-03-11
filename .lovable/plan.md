@@ -1,70 +1,52 @@
 
 
-## Szezonális nyitvatartás kezelése
+## A probléma: `security_invoker` blokkolja az adatokat nem bejelentkezett felhasználóknak
 
-### Koncepció
-Új `seasons` tábla az adatbázisban, ahol az admin megadhatja a nyitvatartási időszakokat (pl. "Nyári szezon: 2026-05-01 – 2026-09-30"). A foglalási oldal naptárja és az admin ártábla naptárja csak ezeken az időszakokon belüli dátumokat engedélyezi.
+### Gyökérok
 
-### Adatbázis
+A `property_settings_public` és `bookings_availability` nézetek `security_invoker = true` beállítással lettek újra létrehozva (migration `20260220095920`). Ez azt jelenti, hogy a nézetek a **lekérdező felhasználó jogosultságaival** futnak.
 
-Új tábla: `seasons`
+Ugyanakkor a `property_settings` tábla SELECT policy-ja csak adminoknak engedélyezi az olvasást:
 ```sql
-CREATE TABLE public.seasons (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  start_date date NOT NULL,
-  end_date date NOT NULL,
-  is_active boolean NOT NULL DEFAULT true,
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.seasons ENABLE ROW LEVEL SECURITY;
-
--- Adminok kezelhetik
-CREATE POLICY "Admins can manage seasons" ON public.seasons
-  FOR ALL TO authenticated
-  USING (public.has_role(auth.uid(), 'admin'))
-  WITH CHECK (public.has_role(auth.uid(), 'admin'));
-
--- Bárki lekérdezheti az aktív szezonokat
-CREATE POLICY "Anyone can view active seasons" ON public.seasons
-  FOR SELECT TO public
-  USING (is_active = true);
+CREATE POLICY "Only admins can view property settings"
+ON public.property_settings
+FOR SELECT
+USING (has_role(auth.uid(), 'admin'::app_role));
 ```
 
-### Admin felület: Új "Szezonok" menüpont
+Tehát:
+- **Bejelentkezett admin (saját gép)**: nézet visszaadja az adatokat → Kapcsolat szekció megjelenik
+- **Inkognitó / más gép (anon user)**: nézet üres eredményt ad → `property` = null → Kapcsolat szekció nem renderelődik, mert feltételes: `property?.address || property?.phone || property?.email`
 
-Új oldal: `src/pages/admin/AdminSeasons.tsx` + route fájl
-- Lista a meglévő szezonokról (név, kezdő dátum, záró dátum, aktív/inaktív)
-- Új szezon hozzáadása: név, kezdő dátum, záró dátum
-- Szerkesztés, törlés
-- Egyszerű CRUD kártyás felület a többi admin oldalhoz hasonlóan
+A `bookings_availability` nézet is érintett -- a `bookings` tábla SELECT policy-ja szintén csak adminoknak engedélyezett, így az anon felhasználók nem kapnak foglalási adatokat sem (ez a keresési eredményeket is torzíthatja).
 
-Navigáció bővítése: `AdminLayout.tsx`-ben új menüpont "Szezonok" ikonnal (pl. `CalendarDays`).
+### Megoldás
 
-### Naptár korlátozás
+Egy új database migration, amely mindkét nézetet újra létrehozza `security_invoker` NÉLKÜL. Így a nézetek a nézet tulajdonosának jogosultságaival futnak (megkerülik az RLS-t), ami biztonságos, mivel a nézetek már szűrik a visszaadott oszlopokat.
 
-**`src/components/guest/SearchForm.tsx`** -- vendégoldali kereső naptár:
-- Új prop: `seasons: { start_date: string; end_date: string }[]`
-- A `Calendar` komponens `disabled` propjában kiszűrni a szezonokon kívüli dátumokat
-- `Index.tsx`-ben lekérdezni az aktív szezonokat és átadni
+```sql
+-- property_settings_public: security_invoker eltávolítása
+DROP VIEW IF EXISTS public.property_settings_public;
+CREATE VIEW public.property_settings_public AS
+SELECT id, name, description, address, phone, email,
+       latitude, longitude, guest_fields, created_at, updated_at
+FROM public.property_settings;
+GRANT SELECT ON public.property_settings_public TO anon, authenticated;
 
-**`src/pages/admin/AdminPricing.tsx`** -- admin ártábla naptár:
-- Szintén lekérdezni a szezonokat
-- A dátumválasztó naptárban (date range picker) a szezonokon kívüli napokat letiltani vagy szürkíteni
-- Az ártábla cellákban a szezonon kívüli napokat vizuálisan jelölni
+-- bookings_availability: security_invoker eltávolítása
+DROP VIEW IF EXISTS public.bookings_availability;
+CREATE VIEW public.bookings_availability AS
+SELECT room_type_id, check_in, check_out, status
+FROM public.bookings
+WHERE status IN ('pending', 'confirmed');
+GRANT SELECT ON public.bookings_availability TO anon, authenticated;
+```
 
-### Módosítandó fájlok
+### Módosítás
 
-| Fájl | Módosítás |
+| Tipus | Leírás |
 |---|---|
-| Database migration | `seasons` tábla létrehozása RLS-sel |
-| `src/pages/admin/AdminSeasons.tsx` | Új -- szezonok CRUD oldal |
-| `src/pages/admin/SeasonsRoute.tsx` | Új -- route wrapper |
-| `src/App.tsx` | Új route: `/admin/seasons` |
-| `src/components/admin/AdminLayout.tsx` | Új menüpont: "Szezonok" |
-| `src/components/guest/SearchForm.tsx` | `seasons` prop, naptár korlátozás |
-| `src/pages/Index.tsx` | Szezonok lekérdezése, átadása SearchForm-nak |
-| `src/pages/admin/AdminPricing.tsx` | Szezonok lekérdezése, naptár korlátozás |
+| Database migration | Mindkét nézet újra létrehozása `security_invoker` nélkül |
+
+Nem szükséges frontend kód módosítás.
 
