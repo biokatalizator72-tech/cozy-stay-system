@@ -116,6 +116,12 @@ export default function AdminPricing() {
       .select('deposit_percent')
       .maybeSingle();
 
+    const { data: seasonsData } = await supabase
+      .from('seasons')
+      .select('start_date, end_date')
+      .eq('is_active', true)
+      .order('start_date');
+
     setRoomTypes(roomTypesData || []);
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
