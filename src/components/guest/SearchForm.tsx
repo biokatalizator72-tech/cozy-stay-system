@@ -21,9 +21,15 @@ export interface GuestCounts {
   children: { bracketId: string; count: number }[];
 }
 
+interface SeasonRange {
+  start_date: string;
+  end_date: string;
+}
+
 interface SearchFormProps {
   maxCapacity: number;
   childAgeBrackets: ChildAgeBracket[];
+  seasons: SeasonRange[];
   onSearch: (checkIn: Date, checkOut: Date, guestCounts: GuestCounts) => void;
   isSearching?: boolean;
 }
