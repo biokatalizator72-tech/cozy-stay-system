@@ -56,6 +56,7 @@ export default function Index() {
   const [roomTypeImages, setRoomTypeImages] = useState<Record<string, RoomTypeImage[]>>({});
   const [propertyImages, setPropertyImages] = useState<PropertyImage[]>([]);
   const [childAgeBrackets, setChildAgeBrackets] = useState<ChildAgeBracket[]>([]);
+  const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [nightDiscounts, setNightDiscounts] = useState<{ min_nights: number; discount_percent: number }[]>([]);
   const [loading, setLoading] = useState(true);
   
