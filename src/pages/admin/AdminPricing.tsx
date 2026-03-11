@@ -61,10 +61,8 @@ export default function AdminPricing() {
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
   const [editedAvailability, setEditedAvailability] = useState<Record<string, Record<string, string>>>({});
   
-  const [dateRange, setDateRange] = useState<DateRange>({
-    from: new Date(),
-    to: addMonths(new Date(), 1),
-  });
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [initialDateRangeSet, setInitialDateRangeSet] = useState(false);
 
   // Bulk fill state
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);

@@ -129,6 +129,8 @@ export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, i
               <Calendar
                 mode="single"
                 selected={checkIn}
+                month={effectiveCheckInMonth}
+                onMonthChange={setCheckInMonth}
                 onSelect={(date) => {
                   setCheckIn(date);
                   setCheckInOpen(false);
