@@ -121,6 +121,7 @@ export default function Index() {
       setProperty(propertyData as any);
       setPropertyImages(propImagesData || []);
       setChildAgeBrackets(bracketsData || []);
+      setSeasons(seasonsData || []);
       setNightDiscounts(nightDiscountsData || []);
       
       const transformed: RoomType[] = (roomTypesData || []).map(rt => ({
