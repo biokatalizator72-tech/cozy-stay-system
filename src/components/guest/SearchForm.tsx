@@ -34,7 +34,7 @@ interface SearchFormProps {
   isSearching?: boolean;
 }
 
-export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearching }: SearchFormProps) {
+export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, isSearching }: SearchFormProps) {
   const [checkIn, setCheckIn] = useState<Date | undefined>();
   const [checkOut, setCheckOut] = useState<Date | undefined>();
   const [adults, setAdults] = useState(2);
@@ -45,6 +45,18 @@ export function SearchForm({ maxCapacity, childAgeBrackets, onSearch, isSearchin
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Build season date checker
+  const isDateInSeason = (date: Date): boolean => {
+    if (seasons.length === 0) return true; // no seasons = all dates allowed
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return seasons.some(s => dateStr >= s.start_date && dateStr <= s.end_date);
+  };
+
+  const isDateDisabled = (date: Date): boolean => {
+    if (date < today) return true;
+    return !isDateInSeason(date);
+  };
 
   const totalChildren = Object.values(childCounts).reduce((sum, count) => sum + count, 0);
   const totalGuests = adults + totalChildren;
