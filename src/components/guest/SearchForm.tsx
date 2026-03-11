@@ -46,6 +46,22 @@ export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, i
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Calculate the initial month based on the earliest future season
+  const seasonStartMonth = (() => {
+    if (seasons.length === 0) return today;
+    const future = seasons
+      .filter(s => new Date(s.end_date + 'T23:59:59') >= today)
+      .sort((a, b) => a.start_date.localeCompare(b.start_date));
+    if (future.length === 0) return today;
+    const start = new Date(future[0].start_date + 'T00:00:00');
+    return start > today ? start : today;
+  })();
+
+  const [checkInMonth, setCheckInMonth] = useState<Date | undefined>();
+
+  // Update default month when seasons load
+  const effectiveCheckInMonth = checkInMonth ?? seasonStartMonth;
+
   // Build season date checker
   const isDateInSeason = (date: Date): boolean => {
     if (seasons.length === 0) return true; // no seasons = all dates allowed
