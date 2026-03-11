@@ -61,10 +61,8 @@ export default function AdminPricing() {
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
   const [editedAvailability, setEditedAvailability] = useState<Record<string, Record<string, string>>>({});
   
-  const [dateRange, setDateRange] = useState<DateRange>({
-    from: new Date(),
-    to: addMonths(new Date(), 1),
-  });
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [initialDateRangeSet, setInitialDateRangeSet] = useState(false);
 
   // Bulk fill state
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
@@ -78,12 +76,44 @@ export default function AdminPricing() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [depositPercent, setDepositPercent] = useState<number>(50);
 
-  const days = dateRange.from && dateRange.to 
+  const days = dateRange?.from && dateRange?.to 
     ? eachDayOfInterval({ start: dateRange.from, end: dateRange.to })
     : [];
 
+  // First effect: fetch seasons and set initial date range
+  useEffect(() => {
+    const initDateRange = async () => {
+      const { data: seasonsData } = await supabase
+        .from('seasons')
+        .select('start_date, end_date')
+        .eq('is_active', true)
+        .order('start_date');
+
+      const loadedSeasons = seasonsData || [];
+      setSeasons(loadedSeasons);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let startDate = today;
+      if (loadedSeasons.length > 0) {
+        const future = loadedSeasons
+          .filter(s => new Date(s.end_date + 'T23:59:59') >= today)
+          .sort((a, b) => a.start_date.localeCompare(b.start_date));
+        if (future.length > 0) {
+          const seasonStart = new Date(future[0].start_date + 'T00:00:00');
+          if (seasonStart > today) startDate = seasonStart;
+        }
+      }
+
+      setDateRange({ from: startDate, to: addMonths(startDate, 1) });
+      setInitialDateRangeSet(true);
+    };
+    initDateRange();
+  }, []);
+
   const fetchData = async () => {
-    if (!dateRange.from || !dateRange.to) return;
+    if (!dateRange?.from || !dateRange?.to) return;
     
     setLoading(true);
     
@@ -116,17 +146,10 @@ export default function AdminPricing() {
       .select('deposit_percent')
       .maybeSingle();
 
-    const { data: seasonsData } = await supabase
-      .from('seasons')
-      .select('start_date, end_date')
-      .eq('is_active', true)
-      .order('start_date');
-
     setRoomTypes(roomTypesData || []);
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
     setAvailability(availabilityData || []);
-    setSeasons(seasonsData || []);
     if (settingsData?.deposit_percent != null) {
       setDepositPercent(settingsData.deposit_percent);
     }
@@ -139,8 +162,8 @@ export default function AdminPricing() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, [dateRange]);
+    if (initialDateRangeSet) fetchData();
+  }, [dateRange, initialDateRangeSet]);
 
   const getAvailabilityCount = (roomTypeId: string, dateStr: string): number => {
     if (editedAvailability[roomTypeId]?.[dateStr] !== undefined) {
