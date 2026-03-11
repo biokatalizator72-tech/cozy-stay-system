@@ -153,6 +153,7 @@ export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, i
                 disabled={(date) => {
                   if (date < today) return true;
                   if (checkIn && date <= checkIn) return true;
+                  if (!isDateInSeason(date)) return true;
                   return false;
                 }}
                 locale={hu}
