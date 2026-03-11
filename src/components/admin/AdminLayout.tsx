@@ -7,6 +7,7 @@ import {
   Building2,
   Bed,
   Calendar,
+  CalendarDays,
   ClipboardList,
   Settings,
   LogOut,
