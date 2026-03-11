@@ -14,6 +14,7 @@ import AdminPricingRoute from "./pages/admin/PricingRoute";
 import AdminDiscountsRoute from "./pages/admin/DiscountsRoute";
 import AdminBookingsRoute from "./pages/admin/BookingsRoute";
 import AdminSettingsRoute from "./pages/admin/SettingsRoute";
+import AdminSeasonsRoute from "./pages/admin/SeasonsRoute";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
