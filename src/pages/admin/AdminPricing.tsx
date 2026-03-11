@@ -508,15 +508,18 @@ export default function AdminPricing() {
                             const displayAvail = editedAvail !== undefined ? editedAvail : availCount.toString();
                             const isEdited = !!edited || editedAvail !== undefined;
                             const isUnavailable = parseInt(displayAvail) === 0;
+                            const offSeason = !isDateInSeason(dateStr);
 
                             return (
                               <td
                                 key={dateStr}
                                 className={cn(
                                   "p-0.5 align-top",
-                                  isEdited && "bg-accent/20",
-                                  isUnavailable && !isEdited && "bg-destructive/10"
+                                  offSeason && "bg-muted/50 opacity-50",
+                                  isEdited && !offSeason && "bg-accent/20",
+                                  isUnavailable && !isEdited && !offSeason && "bg-destructive/10"
                                 )}
+                                title={offSeason ? 'Szezonon kívüli nap' : undefined}
                               >
                                 <div className="space-y-0.5">
                                   <Input
