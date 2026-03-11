@@ -111,6 +111,13 @@ export default function Index() {
         .select('min_nights, discount_percent')
         .order('min_nights');
 
+      // Fetch active seasons
+      const { data: seasonsData } = await supabase
+        .from('seasons')
+        .select('start_date, end_date')
+        .eq('is_active', true)
+        .order('start_date');
+
       setProperty(propertyData as any);
       setPropertyImages(propImagesData || []);
       setChildAgeBrackets(bracketsData || []);
