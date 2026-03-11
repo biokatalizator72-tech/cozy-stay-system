@@ -55,6 +55,7 @@ export default function AdminPricing() {
   const [rooms, setRooms] = useState<{ id: string; room_type_id: string | null }[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [availability, setAvailability] = useState<RoomTypeAvailability[]>([]);
+  const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
