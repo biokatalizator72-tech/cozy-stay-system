@@ -209,7 +209,7 @@ export function SearchForm({ maxCapacity, childAgeBrackets, seasons, onSearch, i
                 {childAgeBrackets.map((bracket) => (
                   <div key={bracket.id} className="flex items-center justify-between">
                     <div>
-                      <span className="font-medium">Gyerek</span>
+                      <span className="font-medium">{bracket.from_age >= 12 ? 'Felnőtt pótágy' : 'Gyerek'}</span>
                       <span className="text-sm text-muted-foreground ml-1">({bracket.from_age}-{bracket.to_age} év)</span>
                     </div>
                     <div className="flex items-center gap-3">

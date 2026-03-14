@@ -182,6 +182,16 @@ export default function BookingPage() {
     days.forEach((day) => {
       const nightlyRate = getPriceForDate(day);
       total += nightlyRate;
+      // Extra adults beyond base_capacity pay per-person rate with adult bracket discount
+      const extraAdults = Math.max(0, adults - (roomType?.base_capacity ?? 2));
+      if (extraAdults > 0) {
+        const adultBracket = childAgeBrackets
+          .filter(b => b.from_age >= 12)
+          .sort((a, b) => b.from_age - a.from_age)[0];
+        const adultDiscountPercent = adultBracket?.discount_percent ?? 0;
+        const perPersonRate = nightlyRate / (roomType?.base_capacity ?? 2);
+        total += perPersonRate * (1 - adultDiscountPercent / 100) * extraAdults;
+      }
       const freeChildSlots = Math.max(0, (roomType?.base_capacity ?? 2) - adults);
       let remainingFreeSlots = freeChildSlots;
       children.forEach(child => {
