@@ -261,6 +261,16 @@ export default function Index() {
         const nightlyRate = rule ? Number(rule.price_per_night) : rt.base_price;
         // Base room price (covers base occupancy)
         total += nightlyRate;
+        // Extra adults beyond base_capacity pay per-person rate with adult bracket discount
+        const extraAdults = Math.max(0, guestCounts.adults - rt.base_capacity);
+        if (extraAdults > 0) {
+          const adultBracket = childAgeBrackets
+            .filter(b => b.from_age >= 12)
+            .sort((a, b) => b.from_age - a.from_age)[0];
+          const adultDiscountPercent = adultBracket?.discount_percent ?? 0;
+          const perPersonRate = nightlyRate / rt.base_capacity;
+          total += perPersonRate * (1 - adultDiscountPercent / 100) * extraAdults;
+        }
         // Children: free slots fill base_capacity first, extras pay discounted per-person rate
         const freeChildSlots = Math.max(0, rt.base_capacity - guestCounts.adults);
         let remainingFreeSlots = freeChildSlots;

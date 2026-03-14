@@ -1,61 +1,52 @@
 
 
-## Árazási logika: extra felnőttek kezelése korkategória-kedvezménnyel
+## A probléma: `security_invoker` blokkolja az adatokat nem bejelentkezett felhasználóknak
 
-### Megértés
+### Gyökérok
 
-Igen, a vendégoldali beviteli mezők maradnak: **Felnőtt** szám + **Gyerek** szám (korkategóriánként). A rendszer feladata, hogy minden szobatípusnál kiszámolja a helyes árat:
+A `property_settings_public` és `bookings_availability` nézetek `security_invoker = true` beállítással lettek újra létrehozva (migration `20260220095920`). Ez azt jelenti, hogy a nézetek a **lekérdező felhasználó jogosultságaival** futnak.
 
-- Ha a felnőttek száma ≤ `base_capacity` → nincs pótdíj
-- Ha a felnőttek száma > `base_capacity` → az extra felnőtteket a **12-99 éves korkategória kedvezményével** számítja (pl. 25% kedvezmény az egy főre jutó árból)
-
-Példa: 3 felnőtt keres szobát:
-- **Kis családi szoba** (`base_capacity=3`): alapár, nincs pótdíj
-- **Deluxe B** (`base_capacity=2`): alapár + 1 felnőtt pótágy 25% kedvezménnyel
-
-### Előfeltétel (admin felületen, kódmódosítás nélkül)
-A Kedvezmények menüpont alatt fel kell vinni egy **12-99 éves korkategóriát** pl. 25% kedvezménnyel. Ez már most is lehetséges az admin UI-ban.
-
-### Módosítások
-
-**1. Árazási logika (`Index.tsx` + `BookingPage.tsx`)**
-
-Mindkét fájlban az ár-kalkulációba be kell illeszteni az extra felnőttek kezelését:
-
-```typescript
-// Extra felnőttek: base_capacity felett
-const extraAdults = Math.max(0, adults - rt.base_capacity);
-if (extraAdults > 0) {
-  // Keressük a "felnőtt" korkategóriát (from_age >= 12)
-  const adultBracket = childAgeBrackets
-    .filter(b => b.from_age >= 12)
-    .sort((a, b) => b.from_age - a.from_age)[0];
-  const discountPercent = adultBracket?.discount_percent ?? 0;
-  const perPersonRate = nightlyRate / rt.base_capacity;
-  total += perPersonRate * (1 - discountPercent / 100) * extraAdults;
-}
-
-// Gyerek free slot számítás: base_capacity - adults (nem változik)
-const freeChildSlots = Math.max(0, rt.base_capacity - adults);
+Ugyanakkor a `property_settings` tábla SELECT policy-ja csak adminoknak engedélyezi az olvasást:
+```sql
+CREATE POLICY "Only admins can view property settings"
+ON public.property_settings
+FOR SELECT
+USING (has_role(auth.uid(), 'admin'::app_role));
 ```
 
-Ha nincs 12+ korkategória, az extra felnőttek teljes árat fizetnek (0% kedvezmény).
+Tehát:
+- **Bejelentkezett admin (saját gép)**: nézet visszaadja az adatokat → Kapcsolat szekció megjelenik
+- **Inkognitó / más gép (anon user)**: nézet üres eredményt ad → `property` = null → Kapcsolat szekció nem renderelődik, mert feltételes: `property?.address || property?.phone || property?.email`
 
-**2. SearchForm UI címke (`SearchForm.tsx`)**
+A `bookings_availability` nézet is érintett -- a `bookings` tábla SELECT policy-ja szintén csak adminoknak engedélyezett, így az anon felhasználók nem kapnak foglalási adatokat sem (ez a keresési eredményeket is torzíthatja).
 
-A korkategória megjelenítésénél dinamikus címke:
-- `from_age >= 12` → "Felnőtt pótágy" ikon: `Users` helyett megfelelő
-- `from_age < 12` → "Gyerek" (marad)
+### Megoldás
 
-**3. BookingPage ár-részletezés**
+Egy új database migration, amely mindkét nézetet újra létrehozza `security_invoker` NÉLKÜL. Így a nézetek a nézet tulajdonosának jogosultságaival futnak (megkerülik az RLS-t), ami biztonságos, mivel a nézetek már szűrik a visszaadott oszlopokat.
 
-Az összegzőben jelenjen meg az extra felnőtt pótdíj sor, ha van.
+```sql
+-- property_settings_public: security_invoker eltávolítása
+DROP VIEW IF EXISTS public.property_settings_public;
+CREATE VIEW public.property_settings_public AS
+SELECT id, name, description, address, phone, email,
+       latitude, longitude, guest_fields, created_at, updated_at
+FROM public.property_settings;
+GRANT SELECT ON public.property_settings_public TO anon, authenticated;
 
-### Módosítandó fájlok
+-- bookings_availability: security_invoker eltávolítása
+DROP VIEW IF EXISTS public.bookings_availability;
+CREATE VIEW public.bookings_availability AS
+SELECT room_type_id, check_in, check_out, status
+FROM public.bookings
+WHERE status IN ('pending', 'confirmed');
+GRANT SELECT ON public.bookings_availability TO anon, authenticated;
+```
 
-| Fájl | Módosítás |
+### Módosítás
+
+| Tipus | Leírás |
 |---|---|
-| `src/pages/Index.tsx` | Extra felnőtt pótdíj a kereső ár-kalkulációba (korkategória-kedvezménnyel) |
-| `src/pages/BookingPage.tsx` | Extra felnőtt pótdíj a foglalási ár-kalkulációba + összegző sor |
-| `src/components/guest/SearchForm.tsx` | Dinamikus címke: "Gyerek" vs "Felnőtt pótágy" a `from_age` alapján |
+| Database migration | Mindkét nézet újra létrehozása `security_invoker` nélkül |
+
+Nem szükséges frontend kód módosítás.
 
