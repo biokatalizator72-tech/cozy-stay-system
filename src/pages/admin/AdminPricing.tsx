@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, eachDayOfInterval, addMonths, getDay } from 'date-fns';
 import { hu } from 'date-fns/locale';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
@@ -496,12 +496,12 @@ export default function AdminPricing() {
                 Még nincsenek szobatípusok. Hozzon létre szobatípusokat az árazáshoz.
               </p>
             ) : (
-              <ScrollArea className="w-full">
+              <div className="w-full overflow-x-auto">
                 <div className="min-w-max">
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="text-left p-2 sticky left-0 bg-card z-10 min-w-[160px]">
+                        <th className="text-left p-2 sticky left-0 bg-card z-20 min-w-[160px] border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
                           Szobatípus
                         </th>
                         {days.map((day) => (
@@ -517,7 +517,7 @@ export default function AdminPricing() {
                     <tbody>
                       {roomTypes.map((roomType) => (
                         <tr key={roomType.id} className={cn("border-b", !roomType.is_active && "opacity-50")}>
-                          <td className="p-2 sticky left-0 bg-card z-10">
+                          <td className="p-2 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
                             <div className="font-medium text-sm">{roomType.name}</div>
                             <div className="text-[10px] text-muted-foreground">
                               Alap: {roomType.base_price.toLocaleString()} Ft
@@ -598,8 +598,7 @@ export default function AdminPricing() {
                     </tbody>
                   </table>
                 </div>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
+              </div>
             )}
           </CardContent>
         </Card>
