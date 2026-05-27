@@ -496,16 +496,16 @@ export default function AdminPricing() {
                 Még nincsenek szobatípusok. Hozzon létre szobatípusokat az árazáshoz.
               </p>
             ) : (
-              <div className="w-full overflow-x-auto">
+              <div className="w-full max-h-[calc(100vh-260px)] overflow-auto">
                 <div className="min-w-max">
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="text-left p-2 sticky left-0 bg-card z-20 min-w-[160px] border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
+                        <th className="text-left p-2 sticky top-0 left-0 bg-card z-30 min-w-[160px] border-r border-b border-border shadow-[2px_2px_4px_-2px_hsl(var(--border))]">
                           Szobatípus
                         </th>
                         {days.map((day) => (
-                          <th key={day.toISOString()} className="p-1 text-center min-w-[56px]">
+                          <th key={day.toISOString()} className="p-1 text-center min-w-[56px] sticky top-0 bg-card z-20 border-b border-border shadow-[0_2px_4px_-2px_hsl(var(--border))]">
                             <div className="font-medium text-xs">{format(day, 'd')}</div>
                             <div className="text-[10px] text-muted-foreground font-normal">
                               {format(day, 'EEE', { locale: hu })}
