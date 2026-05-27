@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, eachDayOfInterval, addMonths, getDay } from 'date-fns';
 import { hu } from 'date-fns/locale';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
