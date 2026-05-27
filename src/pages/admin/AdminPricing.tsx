@@ -596,6 +596,10 @@ export default function AdminPricing() {
                                     inputMode="numeric"
                                     placeholder="Ár"
                                     value={displayPrice}
+                                    data-row={roomType.id}
+                                    data-col={dateStr}
+                                    data-field="price"
+                                    onKeyDown={handleCellKeyDown}
                                     onChange={(e) =>
                                       handlePriceChange(roomType.id, dateStr, 'price', e.target.value.replace(/[^0-9]/g, ''))
                                     }
@@ -606,6 +610,10 @@ export default function AdminPricing() {
                                     inputMode="numeric"
                                     placeholder="Min"
                                     value={displayMinNights}
+                                    data-row={roomType.id}
+                                    data-col={dateStr}
+                                    data-field="min"
+                                    onKeyDown={handleCellKeyDown}
                                     onChange={(e) =>
                                       handlePriceChange(roomType.id, dateStr, 'minNights', e.target.value.replace(/[^0-9]/g, ''))
                                     }
@@ -616,6 +624,10 @@ export default function AdminPricing() {
                                     inputMode="numeric"
                                     placeholder="Db"
                                     value={displayAvail}
+                                    data-row={roomType.id}
+                                    data-col={dateStr}
+                                    data-field="avail"
+                                    onKeyDown={handleCellKeyDown}
                                     onChange={(e) =>
                                       handleAvailabilityChange(roomType.id, dateStr, e.target.value.replace(/[^0-9]/g, ''))
                                     }
