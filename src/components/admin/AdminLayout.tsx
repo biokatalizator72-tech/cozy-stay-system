@@ -132,7 +132,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           </aside>
 
           {/* Main content */}
-          <main className="flex-1 lg:pl-64">
+          <main className="flex-1 min-w-0 lg:pl-64">
             <div className="p-6 lg:p-8">
               {children}
             </div>
