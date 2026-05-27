@@ -1,24 +1,32 @@
-## Első oszlop rögzítése az Ártáblában
+## Tab billentyű vízszintes navigáció az ártáblában
 
-### Gyökérok
-A táblázat már most is használ `sticky left-0` osztályt az első oszlopon (th és td), de a Radix `ScrollArea` komponens belső viewport-ja `display: table` stílust állít, ami **megtöri a `position: sticky` működését**. Ezért görgetéskor a szobatípus oszlop elcsúszik.
+Jelenleg a Tab a természetes DOM-sorrendet követi: Ár → Min → Db → következő nap Ára. A kérés szerint a Tab maradjon **ugyanabban a mezőben** (Ár, Min vagy Db), és ugorjon **vízszintesen a következő napra**.
 
-### Megoldás (`src/pages/admin/AdminPricing.tsx`)
+### Megoldás
 
-1. **Radix `ScrollArea` lecserélése natív görgetésre** a táblázat körül:
-   - `<ScrollArea className="w-full">` → `<div className="w-full overflow-x-auto">`
-   - `<ScrollBar orientation="horizontal" />` sor törlése
-   - Import takarítása (ScrollArea, ScrollBar)
+Az `AdminPricing.tsx` ártáblájában a három `Input` mező kap egy közös azonosítási sémát adat-attribútumokon keresztül, és egy közös `onKeyDown` kezelőt:
 
-2. **Sticky oszlop vizuális megerősítése**, hogy görgetéskor jól elkülönüljön a többi cellától:
-   - A `th` és `td` `sticky left-0` cellákra: `bg-card` (már megvan, opaque), plusz jobb oldali elválasztó árnyék: `shadow-[2px_0_4px_-2px_hsl(var(--border))]` vagy `border-r border-border`
-   - `z-20` a fejléc-cellára (sarok), `z-10` a sor első cellájára (már megvan)
-   - `min-w-[160px]` megmarad, hogy a szobatípus név olvasható legyen
+1. **Adat-attribútumok** minden inputon:
+   - `data-row={roomType.id}`
+   - `data-col={dateStr}` (yyyy-MM-dd)
+   - `data-field="price" | "min" | "avail"`
+
+2. **`handleCellKeyDown(e)` függvény** a komponensben:
+   - Csak `Tab` lenyomásra fut (Enter és nyilak érintetlenek).
+   - `e.preventDefault()`, majd kiszámolja az aktuális nap indexét a `days` tömbben.
+   - `Shift+Tab` → előző nap, `Tab` → következő nap, ugyanazon `roomType.id` és `field` értékkel.
+   - Ha a sor szélére ér (első/utolsó nap):
+     - Tab az utolsó napon → következő szobatípus első napjának ugyanazon mezője
+     - Shift+Tab az első napon → előző szobatípus utolsó napjának ugyanazon mezője
+     - A táblázat széleinél nem csinál semmit (alapértelmezett blur).
+   - A célmezőt `document.querySelector(`input[data-row="..."][data-col="..."][data-field="..."]`)` alapján fókuszálja és kijelöli (`.select()`), hogy a gépelés azonnal felülírja.
+
+3. **Görgetés**: mivel a célinput sticky első oszlopon kívül lehet a látható területen kívül, a fókuszálás után `focus({ preventScroll: false })` természetes módon görget. A sticky bal oszlop ezt nem zavarja.
 
 ### Érintett fájl
+
 | Fájl | Módosítás |
 |---|---|
-| `src/pages/admin/AdminPricing.tsx` | ScrollArea → natív `overflow-x-auto`; sticky cellák árnyékolása/z-index |
+| `src/pages/admin/AdminPricing.tsx` | `handleCellKeyDown` hozzáadása, három `Input`-re `data-*` attribútumok és `onKeyDown` rákötése. |
 
-### Megjegyzés
-Csak prezentációs változás, az árazási logika és adatkezelés érintetlen marad.
+Más viselkedés (mentés, validáció, layout) nem változik.

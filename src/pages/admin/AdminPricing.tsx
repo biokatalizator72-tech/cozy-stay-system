@@ -304,6 +304,42 @@ export default function AdminPricing() {
 
   const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedAvailability).length > 0;
 
+  const handleCellKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Tab') return;
+    const target = e.currentTarget;
+    const row = target.dataset.row;
+    const col = target.dataset.col;
+    const field = target.dataset.field;
+    if (!row || !col || !field) return;
+
+    const colIdx = days.findIndex((d) => format(d, 'yyyy-MM-dd') === col);
+    const rowIdx = roomTypes.findIndex((rt) => rt.id === row);
+    if (colIdx === -1 || rowIdx === -1) return;
+
+    let nextRowIdx = rowIdx;
+    let nextColIdx = colIdx + (e.shiftKey ? -1 : 1);
+
+    if (nextColIdx >= days.length) {
+      nextColIdx = 0;
+      nextRowIdx = rowIdx + 1;
+    } else if (nextColIdx < 0) {
+      nextColIdx = days.length - 1;
+      nextRowIdx = rowIdx - 1;
+    }
+
+    if (nextRowIdx < 0 || nextRowIdx >= roomTypes.length) return;
+
+    e.preventDefault();
+    const nextRow = roomTypes[nextRowIdx].id;
+    const nextCol = format(days[nextColIdx], 'yyyy-MM-dd');
+    const selector = `input[data-row="${nextRow}"][data-col="${nextCol}"][data-field="${field}"]`;
+    const el = document.querySelector<HTMLInputElement>(selector);
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  };
+
   // Bulk fill functions
   const openBulkDialog = (roomTypeId: string) => {
     setBulkRoomTypeId(roomTypeId);
