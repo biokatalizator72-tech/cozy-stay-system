@@ -165,51 +165,35 @@ Deno.serve(async (req) => {
       console.log(`create-booking calculated total_price: ${total_price} (${nights} nights × ${roomType.base_price})`);
     }
 
-    // Quick availability check
-    const { data: rooms } = await supabase
-      .from("rooms")
-      .select("id")
-      .eq("room_type_id", room_type_id)
-      .eq("is_active", true);
+    // Atomi szoba-kiválasztás + foglalás létrehozása egyetlen tranzakcióban.
+    // A create_booking_with_room DB function FOR UPDATE SKIP LOCKED
+    // zárolással választ konkrét, szabad room_id-t, és egy adatbázis-szintű
+    // EXCLUDE constraint is védi a dupla foglalás ellen (lásd migráció:
+    // room_level_booking_and_race_protection).
+    const { data: booking, error: insertError } = await supabase.rpc(
+      "create_booking_with_room",
+      {
+        p_room_type_id: room_type_id,
+        p_check_in: check_in,
+        p_check_out: check_out,
+        p_guest_name: guest_name,
+        p_guest_email: guest_email,
+        p_guest_phone: guest_phone,
+        p_total_price: total_price,
+        p_special_requests: special_requests || null,
+        p_guest_data: guest_data || {},
+      }
+    );
 
-    const totalRooms = rooms?.length || 0;
-
-    const { data: overlapping } = await supabase
-      .from("bookings")
-      .select("id")
-      .eq("room_type_id", room_type_id)
-      .in("status", ["pending", "confirmed"])
-      .lt("check_in", check_out)
-      .gte("check_out", check_in);
-
-    const bookedCount = overlapping?.length || 0;
-
-    if (bookedCount >= totalRooms) {
-      return new Response(
-        JSON.stringify({ error: "Sajnos a kiválasztott szobatípus a megadott időszakban már nem elérhető." }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (insertError) {
+      if (insertError.message?.includes("NO_ROOM_AVAILABLE")) {
+        return new Response(
+          JSON.stringify({ error: "Sajnos a kiválasztott szobatípus a megadott időszakban már nem elérhető." }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw insertError;
     }
-
-    // Create the booking
-    const { data: booking, error: insertError } = await supabase
-      .from("bookings")
-      .insert({
-        room_type_id,
-        check_in,
-        check_out,
-        guest_name,
-        guest_email,
-        guest_phone,
-        total_price,
-        special_requests: special_requests || null,
-        guest_data: guest_data || {},
-        status: "pending",
-      })
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
 
     console.log("create-booking success:", booking.id);
 

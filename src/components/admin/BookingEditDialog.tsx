@@ -25,6 +25,12 @@ interface RoomType {
   name: string;
 }
 
+interface RoomOption {
+  id: string;
+  name: string;
+  room_type_id: string | null;
+}
+
 interface BookingEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,6 +39,7 @@ interface BookingEditDialogProps {
     check_in: string;
     check_out: string;
     room_type_id: string | null;
+    room_id: string | null;
     total_price: number;
   } | null;
   onSaved: () => void;
@@ -42,8 +49,10 @@ export function BookingEditDialog({ open, onOpenChange, booking, onSaved }: Book
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [roomTypeId, setRoomTypeId] = useState('');
+  const [roomId, setRoomId] = useState('');
   const [totalPrice, setTotalPrice] = useState('');
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -51,6 +60,7 @@ export function BookingEditDialog({ open, onOpenChange, booking, onSaved }: Book
       setCheckIn(booking.check_in);
       setCheckOut(booking.check_out);
       setRoomTypeId(booking.room_type_id || '');
+      setRoomId(booking.room_id || '');
       setTotalPrice(String(booking.total_price));
     }
   }, [booking]);
@@ -63,8 +73,27 @@ export function BookingEditDialog({ open, onOpenChange, booking, onSaved }: Book
         .eq('is_active', true)
         .order('sort_order')
         .then(({ data }) => setRoomTypes(data || []));
+      supabase
+        .from('rooms')
+        .select('id, name, room_type_id')
+        .eq('is_active', true)
+        .order('sort_order')
+        .then(({ data }) => setRooms(data || []));
     }
   }, [open]);
+
+  // Ha a szobatípus változik, és a jelenleg kiválasztott konkrét szoba
+  // nem ehhez a típushoz tartozik, ürítsük ki — ne maradjon inkonzisztens
+  // (típus A, de a hozzárendelt szoba B típusú) állapot.
+  useEffect(() => {
+    if (!roomId) return;
+    const current = rooms.find((r) => r.id === roomId);
+    if (current && roomTypeId && current.room_type_id !== roomTypeId) {
+      setRoomId('');
+    }
+  }, [roomTypeId, rooms, roomId]);
+
+  const roomsForType = rooms.filter((r) => r.room_type_id === roomTypeId);
 
   const handleSave = async () => {
     if (!booking) return;
@@ -84,6 +113,7 @@ export function BookingEditDialog({ open, onOpenChange, booking, onSaved }: Book
         check_in: checkIn,
         check_out: checkOut,
         room_type_id: roomTypeId || null,
+        room_id: roomId || null,
         total_price: Number(totalPrice),
       })
       .eq('id', booking.id);
@@ -91,7 +121,14 @@ export function BookingEditDialog({ open, onOpenChange, booking, onSaved }: Book
     setSaving(false);
 
     if (error) {
-      toast.error('Hiba a foglalás mentésekor');
+      // Az EXCLUDE constraint (bookings_no_overlapping_room) ütközés esetén
+      // egyértelmű hibát ad vissza — ilyenkor a választott szoba már foglalt
+      // az adott időszakra.
+      if (error.message?.includes('bookings_no_overlapping_room')) {
+        toast.error('Ez a szoba már foglalt a megadott időszakra.');
+      } else {
+        toast.error('Hiba a foglalás mentésekor');
+      }
     } else {
       toast.success('Foglalás sikeresen módosítva');
       onOpenChange(false);
@@ -124,6 +161,21 @@ export function BookingEditDialog({ open, onOpenChange, booking, onSaved }: Book
                 {roomTypes.map((rt) => (
                   <SelectItem key={rt.id} value={rt.id}>
                     {rt.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Konkrét szoba</Label>
+            <Select value={roomId} onValueChange={setRoomId} disabled={!roomTypeId}>
+              <SelectTrigger>
+                <SelectValue placeholder={roomTypeId ? 'Válassz szobát' : 'Először válassz szobatípust'} />
+              </SelectTrigger>
+              <SelectContent>
+                {roomsForType.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
                   </SelectItem>
                 ))}
               </SelectContent>

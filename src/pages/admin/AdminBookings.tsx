@@ -164,7 +164,7 @@ export default function AdminBookings() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Vendég</TableHead>
-                    <TableHead>Szobatípus</TableHead>
+                    <TableHead>Szoba</TableHead>
                     <TableHead>Dátum</TableHead>
                     <TableHead>Összeg</TableHead>
                     <TableHead>Státusz</TableHead>
@@ -180,7 +180,14 @@ export default function AdminBookings() {
                           <div className="text-sm text-muted-foreground">{booking.guest_email}</div>
                         </div>
                       </TableCell>
-                      <TableCell>{booking.room_types?.name || booking.rooms?.name || 'N/A'}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{booking.rooms?.name || 'Nincs szoba hozzárendelve'}</div>
+                          {booking.room_types?.name && (
+                            <div className="text-sm text-muted-foreground">{booking.room_types.name}</div>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="text-sm">
                           <div>{formatDate(booking.check_in)}</div>
@@ -232,8 +239,12 @@ export default function AdminBookings() {
                     <div className="font-medium">{selectedBooking.guest_phone || '-'}</div>
                   </div>
                   <div>
+                    <div className="text-muted-foreground">Szoba</div>
+                    <div className="font-medium">{selectedBooking.rooms?.name || 'Nincs hozzárendelve'}</div>
+                  </div>
+                  <div>
                     <div className="text-muted-foreground">Szobatípus</div>
-                    <div className="font-medium">{selectedBooking.room_types?.name || selectedBooking.rooms?.name || '-'}</div>
+                    <div className="font-medium">{selectedBooking.room_types?.name || '-'}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Érkezés</div>

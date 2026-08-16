@@ -1,7 +1,13 @@
-project_id = "vjnfzetyiyqglqwbygdj"
+project_id = "xjbiuitxpfrklckjfity"
 
 [functions.check-availability]
 verify_jwt = false
 
 [functions.create-booking]
+verify_jwt = false
+
+[functions.send-booking-confirmation]
+verify_jwt = false
+
+[functions.create-admin]
 verify_jwt = false

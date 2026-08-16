@@ -45,59 +45,46 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check availability for each room type across the date range
-    // Get all dates between check_in and check_out (exclusive of check_out)
-    const { data: availability, error: avError } = await supabase
-      .from("room_type_availability")
-      .select("room_type_id, date, available_count")
-      .in("room_type_id", roomTypes.map((rt) => rt.id))
-      .gte("date", check_in)
-      .lt("date", check_out);
+    // Valódi, konkrét szoba-szintű elérhetőség számítása típusonként:
+    // egy szoba akkor számít szabadnak, ha NINCS rá pending/confirmed
+    // foglalás, ami átfedi a kért időszakot. Ez nem aggregált darabszám-
+    // különbség, hanem tényleges room_id-k alapján történő számítás.
 
-    if (avError) throw avError;
+    // Az érintett típusokhoz tartozó összes aktív, konkrét szoba
+    const { data: rooms, error: rmError } = await supabase
+      .from("rooms")
+      .select("id, room_type_id")
+      .eq("is_active", true)
+      .in("room_type_id", roomTypes.map((rt) => rt.id));
 
-    // Also check bookings that overlap with the requested period
-    const { data: existingBookings, error: bkError } = await supabase
+    if (rmError) throw rmError;
+
+    const roomIds = (rooms || []).map((r) => r.id);
+
+    // Ezek közül melyik room_id-kra van átfedő, aktív foglalás
+    const { data: overlappingBookings, error: bkError } = await supabase
       .from("bookings")
-      .select("room_type_id")
-      .in("room_type_id", roomTypes.map((rt) => rt.id))
+      .select("room_id")
+      .in("room_id", roomIds.length > 0 ? roomIds : ["00000000-0000-0000-0000-000000000000"])
       .in("status", ["pending", "confirmed"])
       .lt("check_in", check_out)
       .gte("check_out", check_in);
 
     if (bkError) throw bkError;
 
-    // Count bookings per room type
-    const bookingCounts: Record<string, number> = {};
-    for (const b of existingBookings || []) {
-      if (b.room_type_id) {
-        bookingCounts[b.room_type_id] = (bookingCounts[b.room_type_id] || 0) + 1;
-      }
-    }
+    const bookedRoomIds = new Set((overlappingBookings || []).map((b) => b.room_id));
 
-    // Count rooms per room type
-    const { data: rooms, error: rmError } = await supabase
-      .from("rooms")
-      .select("room_type_id")
-      .eq("is_active", true)
-      .in("room_type_id", roomTypes.map((rt) => rt.id));
-
-    if (rmError) throw rmError;
-
-    const roomCounts: Record<string, number> = {};
+    // Ténylegesen szabad room_id-k típusonkénti csoportosítása
+    const freeRoomsByType: Record<string, string[]> = {};
     for (const r of rooms || []) {
-      if (r.room_type_id) {
-        roomCounts[r.room_type_id] = (roomCounts[r.room_type_id] || 0) + 1;
-      }
+      if (!r.room_type_id) continue;
+      if (bookedRoomIds.has(r.id)) continue;
+      (freeRoomsByType[r.room_type_id] ||= []).push(r.id);
     }
 
-    // Determine available room types
+    // Determine available room types based on actual free rooms
     const availableRoomTypes = roomTypes
-      .filter((rt) => {
-        const totalRooms = roomCounts[rt.id] || 0;
-        const booked = bookingCounts[rt.id] || 0;
-        return totalRooms - booked > 0;
-      })
+      .filter((rt) => (freeRoomsByType[rt.id]?.length || 0) > 0)
       .map((rt) => ({
         id: rt.id,
         name: rt.name,
@@ -106,7 +93,8 @@ Deno.serve(async (req) => {
         capacity: rt.capacity,
         base_capacity: rt.base_capacity,
         amenities: rt.amenities,
-        available_rooms: (roomCounts[rt.id] || 0) - (bookingCounts[rt.id] || 0),
+        available_rooms: freeRoomsByType[rt.id]?.length || 0,
+        available_room_ids: freeRoomsByType[rt.id] || [],
       }));
 
     return new Response(

@@ -25,7 +25,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename="/foglalas">
           {/* <VapiButton /> */}{/* Ideiglenesen kikapcsolva */}
           <Routes>
             <Route path="/" element={<Index />} />
