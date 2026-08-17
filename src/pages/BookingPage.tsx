@@ -249,8 +249,13 @@ export default function BookingPage() {
 
     setSubmitting(true);
 
-    const { error } = await supabase.from('bookings').insert([
-      {
+    // A create-booking function-t hívjuk (nem közvetlen insert-et), hogy a
+    // weboldalas foglalás is megkapja a konkrét szoba-hozzárendelést és a
+    // dupla foglalás elleni adatbázis-szintű védelmet — ugyanazt az utat
+    // járja be, mint a telefonos (Vapi) foglalás. A visszaigazolás emailt
+    // (vendégnek és adminnak is) a create-booking már maga elküldi.
+    const { data, error } = await supabase.functions.invoke('create-booking', {
+      body: {
         room_type_id: roomType.id,
         guest_name: formData.guest_name,
         guest_email: formData.guest_email,
@@ -262,29 +267,13 @@ export default function BookingPage() {
           isReturningGuest ? '[Törzsvendég kedvezmény igényelve]' : '',
           formData.special_requests || '',
         ].filter(Boolean).join('\n') || null,
-        status: 'pending',
       },
-    ]);
+    });
 
-    if (error) {
-      toast.error('Hiba történt a foglalás során');
-      console.error(error);
+    if (error || data?.error) {
+      toast.error(data?.error || 'Hiba történt a foglalás során');
+      console.error(error || data?.error);
     } else {
-      // Send confirmation email (non-blocking)
-      try {
-        await supabase.functions.invoke('send-booking-confirmation', {
-          body: {
-            guest_name: formData.guest_name,
-            guest_email: formData.guest_email,
-            room_name: roomType.name,
-            check_in: format(dateRange.from, 'yyyy. MMMM d.', { locale: hu }),
-            check_out: format(dateRange.to, 'yyyy. MMMM d.', { locale: hu }),
-            total_price: total,
-          },
-        });
-      } catch (emailError) {
-        console.error('Email küldési hiba:', emailError);
-      }
       setSuccess(true);
     }
 

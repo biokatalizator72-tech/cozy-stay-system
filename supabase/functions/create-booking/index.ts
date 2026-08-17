@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Resend } from "https://esm.sh/resend@4.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -197,37 +196,54 @@ Deno.serve(async (req) => {
 
     console.log("create-booking success:", booking.id);
 
-    // Send admin notification email
+    // --- Visszaigazolás küldése (vendégnek ÉS adminnak) ---
+    // Ez minden foglalási csatornán fut (weboldal, telefonos Vapi asszisztens,
+    // stb.), mert itt, a create-booking function-ben történik, nem a
+    // frontend felelőssége — így nem lehet elfelejteni meghívni.
+    //
+    // A küldés egy Google Apps Script webhookon keresztül megy (GmailApp),
+    // a valódi siralyhotel.hu@gmail.com fiókból, NEM Resend-en keresztül —
+    // mert a siralyhotel.hu domain nincs hitelesítve a Resend-nél, és a
+    // Tominak nincs hozzáférése a domain DNS beállításaihoz, hogy ezt
+    // megoldja.
     try {
+      const gasWebhookUrl = Deno.env.get("GAS_EMAIL_WEBHOOK_URL");
       const { data: propSettings } = await supabase
         .from("property_settings")
-        .select("admin_email, name")
+        .select("deposit_percent, admin_email")
         .limit(1)
         .single();
 
-      if (propSettings?.admin_email) {
-        const resendApiKey = Deno.env.get("RESEND_API_KEY");
-        if (resendApiKey) {
-          const resend = new Resend(resendApiKey);
-          await resend.emails.send({
-            from: `${propSettings.name || "PMS"} <info@siralyhotel.hu>`,
-            to: [propSettings.admin_email],
-            subject: "Foglalás történt",
-            html: `<h2>Foglalás adatai</h2>
-<ul>
-  <li><b>Dátum:</b> ${check_in} – ${check_out}</li>
-  <li><b>Szoba:</b> ${roomType.name}</li>
-  <li><b>Ár:</b> ${Number(total_price).toLocaleString("hu-HU")} Ft</li>
-  <li><b>Vendég neve:</b> ${guest_name}</li>
-  <li><b>Vendég email:</b> ${guest_email}</li>
-  <li><b>Vendég telefon:</b> ${guest_phone || "nem megadott"}</li>
-</ul>`,
-          });
-          console.log("Admin notification sent to", propSettings.admin_email);
-        }
+      // Csak akkor küldünk a vendégnek, ha valódi email címet adott meg
+      // (nem a "nincs megadva" placeholdert, ami telefonos hívásnál
+      // előfordulhat, ha valamiért mégis email nélkül futott le a foglalás).
+      const hasRealGuestEmail = guest_email && guest_email !== "nincs@megadva.hu";
+
+      if (gasWebhookUrl && hasRealGuestEmail) {
+        const webhookRes = await fetch(gasWebhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "booking_confirmation",
+            guest_name,
+            guest_email,
+            room_name: roomType.name,
+            check_in,
+            check_out,
+            total_price,
+            deposit_percent: propSettings?.deposit_percent ?? 30,
+            admin_email: propSettings?.admin_email || "siralyhotel.hu@gmail.com",
+          }),
+        });
+        const webhookJson = await webhookRes.json().catch(() => null);
+        console.log("Confirmation webhook response:", webhookJson);
+      } else if (!gasWebhookUrl) {
+        console.log("GAS_EMAIL_WEBHOOK_URL nincs beállítva, visszaigazolás nem került elküldésre.");
+      } else {
+        console.log("Skipping confirmation email: no real guest_email provided");
       }
     } catch (emailErr) {
-      console.error("Admin notification email error:", emailErr.message);
+      console.error("Confirmation email error:", emailErr.message);
     }
     return new Response(
       JSON.stringify({
