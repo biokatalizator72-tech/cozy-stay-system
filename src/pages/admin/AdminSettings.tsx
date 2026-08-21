@@ -38,10 +38,27 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
 
   const fetchData = async () => {
-    const { data: settingsData } = await supabase
+    let { data: settingsData, error: settingsError } = await supabase
       .from('property_settings')
       .select('*')
       .maybeSingle();
+
+    // Ha még nincs egyetlen sor sem a táblában (üres adatbázis), hozzunk
+    // létre egyet alapértékekkel, hogy a beállítások oldal ne akadjon be
+    // örökre a "nem sikerült betölteni" hibaüzenetbe.
+    if (!settingsData && !settingsError) {
+      const { data: created, error: createError } = await supabase
+        .from('property_settings')
+        .insert([{}] as any)
+        .select()
+        .maybeSingle();
+
+      if (createError) {
+        toast.error('Hiba a beállítások létrehozásakor: ' + createError.message);
+      } else {
+        settingsData = created;
+      }
+    }
 
     const { data: imagesData } = await supabase
       .from('property_images')
@@ -51,7 +68,7 @@ export default function AdminSettings() {
     if (settingsData) {
       setSettings({
         ...settingsData,
-        guest_fields: Array.isArray(settingsData.guest_fields) 
+        guest_fields: Array.isArray(settingsData.guest_fields)
           ? settingsData.guest_fields as string[]
           : ['name', 'email', 'phone', 'arrival_time', 'special_requests'],
         admin_email: (settingsData as any).admin_email || null,
