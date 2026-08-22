@@ -177,60 +177,36 @@ export default function Index() {
     });
     const stayDates = stayDatesInterval.map(d => format(d, 'yyyy-MM-dd'));
 
-    // Fetch room_type_availability for the date range
-    const { data: availabilityData } = await supabase
-      .from('room_type_availability')
-      .select('room_type_id, date, available_count')
-      .gte('date', checkInStr)
-      .lte('date', format(addDays(checkOut, -1), 'yyyy-MM-dd'));
-
-    // Fetch bookings that overlap with the selected dates (via public view)
-    const { data: bookingsData } = await supabase
-      .from('bookings_availability' as any)
-      .select('room_type_id, check_in, check_out')
-      .not('room_type_id', 'is', null)
-      .lte('check_in', checkOutStr)
-      .gte('check_out', checkInStr);
-
-    // Build availability map: room_type_id -> date -> available_count
-    const availMap: Record<string, Record<string, number>> = {};
-    availabilityData?.forEach((row) => {
-      if (!availMap[row.room_type_id]) {
-        availMap[row.room_type_id] = {};
+    // Valódi, szoba-szintű elérhetőség lekérdezése a check-availability
+    // edge function-től (ugyanaz a logika, amit a Vapi telefonos asszisztens
+    // is használ): konkrét szabad room_id-k alapján dönt, nem egy admin
+    // által karbantartott darabszám-táblából (az a tábla a 2026-08-16-i
+    // migrációval megszűnt, a régi kliens-oldali logika azóta mindig 0
+    // elérhető szobát talált itt).
+    const { data: availabilityResult, error: availabilityError } = await supabase.functions.invoke(
+      'check-availability',
+      {
+        body: {
+          check_in: checkInStr,
+          check_out: checkOutStr,
+          adults: guestCounts.adults,
+          children: totalChildren,
+        },
       }
-      availMap[row.room_type_id][row.date] = row.available_count;
-    });
+    );
 
-    // Build booking count map: room_type_id -> date -> booked_count
-    const bookingCountMap: Record<string, Record<string, number>> = {};
-    (bookingsData as any[] | null)?.forEach((booking: any) => {
-      if (!booking.room_type_id) return;
-      const bookingStart = new Date(booking.check_in);
-      const bookingEnd = new Date(booking.check_out);
-      
-      stayDates.forEach((dateStr) => {
-        const date = new Date(dateStr);
-        if (date >= bookingStart && date < bookingEnd) {
-          if (!bookingCountMap[booking.room_type_id]) {
-            bookingCountMap[booking.room_type_id] = {};
-          }
-          bookingCountMap[booking.room_type_id][dateStr] = 
-            (bookingCountMap[booking.room_type_id][dateStr] || 0) + 1;
-        }
-      });
-    });
+    if (availabilityError) {
+      console.error('check-availability error:', availabilityError);
+    }
 
-    // Filter room types: capacity >= totalGuests AND available on ALL stay dates
+    const availableIds = new Set<string>(
+      (availabilityResult?.room_types || []).map((rt: { id: string }) => rt.id)
+    );
+
+    // Filter room types: capacity >= totalGuests AND ténylegesen elérhető
     const filtered = roomTypes.filter((rt) => {
       if (rt.capacity < totalGuests) return false;
-
-      // Check every stay date
-      return stayDates.every((dateStr) => {
-        const adminCount = availMap[rt.id]?.[dateStr] ?? 0;
-        const bookedCount = bookingCountMap[rt.id]?.[dateStr] ?? 0;
-        const free = adminCount - bookedCount;
-        return free >= 1;
-      });
+      return availableIds.has(rt.id);
     });
 
     // Sort: exact capacity match first, then by capacity difference, then by sort_order

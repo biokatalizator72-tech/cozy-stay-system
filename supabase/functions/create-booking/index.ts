@@ -154,6 +154,48 @@ Deno.serve(async (req) => {
       );
     }
 
+    // --- Korlátozások ellenőrzése (Ártábla admin oldal "Korlátozások"
+    // nézete): minimum éjszakaszám, "Nem érkezési nap", "Nem távozási nap".
+    // Ez ugyanazt a logikát futtatja le, mint a check-availability, de itt
+    // is szükséges, mert ide a Vapi telefonos asszisztens és a weboldal is
+    // közvetlenül eljuthat anélkül, hogy előtte lekérdezte volna az
+    // elérhetőséget.
+    const nights = Math.round(
+      (new Date(check_out!).getTime() - new Date(check_in!).getTime()) / 86400000
+    );
+
+    const { data: restrictionRules } = await supabase
+      .from("pricing_rules")
+      .select("start_date, min_nights, closed_to_arrival, closed_to_departure")
+      .eq("room_type_id", room_type_id)
+      .in("start_date", [check_in, check_out]);
+
+    const arrivalRule = restrictionRules?.find((r) => r.start_date === check_in);
+    const departureRule = restrictionRules?.find((r) => r.start_date === check_out);
+
+    if (arrivalRule?.closed_to_arrival) {
+      return new Response(
+        JSON.stringify({ error: "Erre a napra nem lehet érkezni ebbe a szobatípusba." }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (departureRule?.closed_to_departure) {
+      return new Response(
+        JSON.stringify({ error: "Erre a napra nem lehet távozni ebből a szobatípusból." }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (arrivalRule?.min_nights && nights < arrivalRule.min_nights) {
+      return new Response(
+        JSON.stringify({
+          error: `Ehhez a szobatípushoz ettől a naptól minimum ${arrivalRule.min_nights} éjszakás foglalás szükséges.`,
+        }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // --- Default total_price ---
     if (total_price == null || total_price === undefined) {
       const nights = Math.max(

@@ -82,9 +82,43 @@ Deno.serve(async (req) => {
       (freeRoomsByType[r.room_type_id] ||= []).push(r.id);
     }
 
-    // Determine available room types based on actual free rooms
+    // Korlátozások (Ártábla admin oldal "Korlátozások" nézete): minimum
+    // éjszakaszám az érkezési naphoz kötve, "Nem érkezési nap" az érkezési
+    // naphoz, "Nem távozási nap" a távozási naphoz. A pricing_rules
+    // egy-egy sora mindig egyetlen napot fed le (start_date = end_date),
+    // ezért elég a check_in és a check_out dátumra rákeresni.
+    const nights = Math.round(
+      (new Date(check_out).getTime() - new Date(check_in).getTime()) / 86400000
+    );
+
+    const { data: restrictionRules } = await supabase
+      .from("pricing_rules")
+      .select("room_type_id, start_date, min_nights, closed_to_arrival, closed_to_departure")
+      .in("room_type_id", roomTypes.map((rt) => rt.id))
+      .in("start_date", [check_in, check_out]);
+
+    const arrivalRuleByType = new Map<string, { min_nights: number; closed_to_arrival: boolean }>();
+    const departureRuleByType = new Map<string, { closed_to_departure: boolean }>();
+    (restrictionRules || []).forEach((r) => {
+      if (r.start_date === check_in) {
+        arrivalRuleByType.set(r.room_type_id, { min_nights: r.min_nights, closed_to_arrival: r.closed_to_arrival });
+      }
+      if (r.start_date === check_out) {
+        departureRuleByType.set(r.room_type_id, { closed_to_departure: r.closed_to_departure });
+      }
+    });
+
+    // Determine available room types based on actual free rooms + korlátozások
     const availableRoomTypes = roomTypes
       .filter((rt) => (freeRoomsByType[rt.id]?.length || 0) > 0)
+      .filter((rt) => {
+        const arrivalRule = arrivalRuleByType.get(rt.id);
+        if (arrivalRule?.closed_to_arrival) return false;
+        if (arrivalRule?.min_nights && nights < arrivalRule.min_nights) return false;
+        const departureRule = departureRuleByType.get(rt.id);
+        if (departureRule?.closed_to_departure) return false;
+        return true;
+      })
       .map((rt) => ({
         id: rt.id,
         name: rt.name,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,9 +6,9 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Save, CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, eachDayOfInterval, addMonths, getDay } from 'date-fns';
 import { hu } from 'date-fns/locale';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -22,6 +22,7 @@ interface RoomType {
   id: string;
   name: string;
   base_price: number;
+  capacity: number;
   is_active: boolean;
 }
 
@@ -33,18 +34,15 @@ interface PricingRule {
   end_date: string;
   price_per_night: number;
   min_nights: number;
-}
-
-interface RoomTypeAvailability {
-  id: string;
-  room_type_id: string;
-  date: string;
-  available_count: number;
+  closed_to_arrival: boolean;
+  closed_to_departure: boolean;
 }
 
 interface DayPricing {
   price: number | null;
   min_nights: number | null;
+  closed_to_arrival: boolean;
+  closed_to_departure: boolean;
   ruleId: string | null;
 }
 
@@ -54,13 +52,13 @@ export default function AdminPricing() {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [rooms, setRooms] = useState<{ id: string; room_type_id: string | null }[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
-  const [availability, setAvailability] = useState<RoomTypeAvailability[]>([]);
   const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
-  const [editedAvailability, setEditedAvailability] = useState<Record<string, Record<string, string>>>({});
-  
+  const [editedRestrictions, setEditedRestrictions] = useState<Record<string, Record<string, { closedArrival?: boolean; closedDeparture?: boolean }>>>({});
+  const [showRestrictions, setShowRestrictions] = useState(false);
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [initialDateRangeSet, setInitialDateRangeSet] = useState(false);
 
@@ -72,11 +70,12 @@ export default function AdminPricing() {
   const [bulkDays, setBulkDays] = useState<boolean[]>([true, true, true, true, true, true, true]);
   const [bulkPrice, setBulkPrice] = useState('');
   const [bulkMinNights, setBulkMinNights] = useState('');
-  const [bulkCapacity, setBulkCapacity] = useState('');
+  const [bulkClosedArrival, setBulkClosedArrival] = useState(false);
+  const [bulkClosedDeparture, setBulkClosedDeparture] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [depositPercent, setDepositPercent] = useState<number>(50);
 
-  const days = dateRange?.from && dateRange?.to 
+  const days = dateRange?.from && dateRange?.to
     ? eachDayOfInterval({ start: dateRange.from, end: dateRange.to })
     : [];
 
@@ -114,12 +113,12 @@ export default function AdminPricing() {
 
   const fetchData = async () => {
     if (!dateRange?.from || !dateRange?.to) return;
-    
+
     setLoading(true);
-    
+
     const { data: roomTypesData } = await supabase
       .from('room_types')
-      .select('id, name, base_price, is_active')
+      .select('id, name, base_price, capacity, is_active')
       .order('sort_order');
 
     const startDate = format(dateRange.from, 'yyyy-MM-dd');
@@ -130,12 +129,6 @@ export default function AdminPricing() {
       .select('*')
       .gte('end_date', startDate)
       .lte('start_date', endDate);
-
-    const { data: availabilityData } = await supabase
-      .from('room_type_availability')
-      .select('*')
-      .gte('date', startDate)
-      .lte('date', endDate);
 
     const { data: roomsData } = await supabase
       .from('rooms')
@@ -149,7 +142,6 @@ export default function AdminPricing() {
     setRoomTypes(roomTypesData || []);
     setRooms(roomsData || []);
     setPricingRules(rulesData || []);
-    setAvailability(availabilityData || []);
     if (settingsData?.deposit_percent != null) {
       setDepositPercent(settingsData.deposit_percent);
     }
@@ -165,24 +157,6 @@ export default function AdminPricing() {
     if (initialDateRangeSet) fetchData();
   }, [dateRange, initialDateRangeSet]);
 
-  const getAvailabilityCount = (roomTypeId: string, dateStr: string): number => {
-    if (editedAvailability[roomTypeId]?.[dateStr] !== undefined) {
-      return parseInt(editedAvailability[roomTypeId][dateStr]) || 0;
-    }
-    const avail = availability.find(a => a.room_type_id === roomTypeId && a.date === dateStr);
-    return avail?.available_count ?? 0;
-  };
-
-  const handleAvailabilityChange = (roomTypeId: string, dateStr: string, value: string) => {
-    setEditedAvailability(prev => ({
-      ...prev,
-      [roomTypeId]: {
-        ...prev[roomTypeId],
-        [dateStr]: value,
-      },
-    }));
-  };
-
   const getPricingForDay = (roomTypeId: string, date: Date): DayPricing => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const rule = pricingRules.find(
@@ -196,6 +170,8 @@ export default function AdminPricing() {
       return {
         price: rule.price_per_night,
         min_nights: rule.min_nights,
+        closed_to_arrival: !!rule.closed_to_arrival,
+        closed_to_departure: !!rule.closed_to_departure,
         ruleId: rule.id,
       };
     }
@@ -204,6 +180,8 @@ export default function AdminPricing() {
     return {
       price: roomType?.base_price || null,
       min_nights: 1,
+      closed_to_arrival: false,
+      closed_to_departure: false,
       ruleId: null,
     };
   };
@@ -222,18 +200,49 @@ export default function AdminPricing() {
     }));
   };
 
+  const handleRestrictionChange = (
+    roomTypeId: string,
+    dateStr: string,
+    field: 'closedArrival' | 'closedDeparture',
+    value: boolean
+  ) => {
+    setEditedRestrictions((prev) => ({
+      ...prev,
+      [roomTypeId]: {
+        ...prev[roomTypeId],
+        [dateStr]: {
+          ...prev[roomTypeId]?.[dateStr],
+          [field]: value,
+        },
+      },
+    }));
+  };
+
   const savePricing = async () => {
     setSaving(true);
-    
-    try {
-      for (const roomTypeId of Object.keys(editedPrices)) {
-        for (const dateStr of Object.keys(editedPrices[roomTypeId])) {
-          const { price, minNights } = editedPrices[roomTypeId][dateStr];
-          
-          if (!price && !minNights) continue;
 
-          const priceNum = price ? parseFloat(price) : null;
-          const minNightsNum = minNights ? parseInt(minNights) : 1;
+    try {
+      // Egyesítjük az ár/min. éjszaka és a korlátozás-szerkesztéseket
+      // szobatípus+nap szerint, hogy egy naphoz csak egy pricing_rules
+      // sor íródjon, akármelyik mezőt is módosította az admin.
+      const touched: Record<string, Set<string>> = {};
+      const mark = (roomTypeId: string, dateStr: string) => {
+        (touched[roomTypeId] ||= new Set()).add(dateStr);
+      };
+      Object.entries(editedPrices).forEach(([rtId, dates]) => {
+        Object.keys(dates).forEach((d) => mark(rtId, d));
+      });
+      Object.entries(editedRestrictions).forEach(([rtId, dates]) => {
+        Object.keys(dates).forEach((d) => mark(rtId, d));
+      });
+
+      for (const roomTypeId of Object.keys(touched)) {
+        for (const dateStr of touched[roomTypeId]) {
+          const priceEdit = editedPrices[roomTypeId]?.[dateStr];
+          const restrictionEdit = editedRestrictions[roomTypeId]?.[dateStr];
+
+          const priceNum = priceEdit?.price ? parseFloat(priceEdit.price) : null;
+          const minNightsNum = priceEdit?.minNights ? parseInt(priceEdit.minNights) : null;
 
           const existingRule = pricingRules.find(
             (r) =>
@@ -243,66 +252,51 @@ export default function AdminPricing() {
           );
 
           if (existingRule) {
-            await supabase
-              .from('pricing_rules')
-              .update({
-                price_per_night: priceNum || existingRule.price_per_night,
-                min_nights: minNightsNum,
-              })
-              .eq('id', existingRule.id);
-          } else if (priceNum) {
+            const updateData: Record<string, number | boolean> = {};
+            if (priceNum != null) updateData.price_per_night = priceNum;
+            if (minNightsNum != null) updateData.min_nights = minNightsNum;
+            if (restrictionEdit?.closedArrival !== undefined) updateData.closed_to_arrival = restrictionEdit.closedArrival;
+            if (restrictionEdit?.closedDeparture !== undefined) updateData.closed_to_departure = restrictionEdit.closedDeparture;
+
+            if (Object.keys(updateData).length > 0) {
+              await supabase.from('pricing_rules').update(updateData).eq('id', existingRule.id);
+            }
+          } else {
             const roomId = rooms.find(r => r.room_type_id === roomTypeId)?.id;
             if (!roomId) {
               console.error('No room found for room_type_id:', roomTypeId);
               continue;
             }
+            const roomType = roomTypes.find((rt) => rt.id === roomTypeId);
             await supabase.from('pricing_rules').insert([
               {
                 room_id: roomId,
                 room_type_id: roomTypeId,
                 start_date: dateStr,
                 end_date: dateStr,
-                price_per_night: priceNum,
-                min_nights: minNightsNum,
+                price_per_night: priceNum ?? roomType?.base_price ?? 0,
+                min_nights: minNightsNum ?? 1,
+                closed_to_arrival: restrictionEdit?.closedArrival ?? false,
+                closed_to_departure: restrictionEdit?.closedDeparture ?? false,
               },
             ]);
           }
         }
       }
 
-      for (const roomTypeId of Object.keys(editedAvailability)) {
-        for (const dateStr of Object.keys(editedAvailability[roomTypeId])) {
-          const availableCount = parseInt(editedAvailability[roomTypeId][dateStr]) || 0;
-          const existingAvail = availability.find(
-            a => a.room_type_id === roomTypeId && a.date === dateStr
-          );
-
-          if (existingAvail) {
-            await supabase
-              .from('room_type_availability')
-              .update({ available_count: availableCount })
-              .eq('id', existingAvail.id);
-          } else {
-            await supabase.from('room_type_availability').insert([
-              { room_type_id: roomTypeId, date: dateStr, available_count: availableCount }
-            ]);
-          }
-        }
-      }
-
-      toast.success('Árak és elérhetőség mentve');
+      toast.success('Árak és korlátozások mentve');
       setEditedPrices({});
-      setEditedAvailability({});
+      setEditedRestrictions({});
       fetchData();
     } catch (error) {
       console.error('Pricing save error:', error);
       toast.error('Hiba a mentéskor');
     }
-    
+
     setSaving(false);
   };
 
-  const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedAvailability).length > 0;
+  const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedRestrictions).length > 0;
 
   const handleCellKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Tab') return;
@@ -348,13 +342,15 @@ export default function AdminPricing() {
     setBulkDays([true, true, true, true, true, true, true]);
     setBulkPrice('');
     setBulkMinNights('');
-    setBulkCapacity('');
+    setBulkClosedArrival(false);
+    setBulkClosedDeparture(false);
     setBulkDialogOpen(true);
   };
 
   const saveBulk = async () => {
     if (!bulkRoomTypeId || !bulkDateFrom || !bulkDateTo) return;
-    if (!bulkPrice && !bulkMinNights && !bulkCapacity) {
+    const applyRestrictions = showRestrictions && (bulkClosedArrival || bulkClosedDeparture);
+    if (!bulkPrice && !bulkMinNights && !applyRestrictions) {
       toast.error('Legalább egy mezőt ki kell tölteni');
       return;
     }
@@ -362,73 +358,59 @@ export default function AdminPricing() {
     setBulkSaving(true);
     try {
       const allDays = eachDayOfInterval({ start: bulkDateFrom, end: bulkDateTo });
-      
+
       for (const day of allDays) {
         // getDay: 0=Sunday, 1=Monday ... 6=Saturday
         // bulkDays: [Mon, Tue, Wed, Thu, Fri, Sat, Sun] = indices 0-6
         const jsDay = getDay(day); // 0=Sun, 1=Mon...6=Sat
         const bulkIndex = jsDay === 0 ? 6 : jsDay - 1; // convert to Mon=0...Sun=6
-        
+
         if (!bulkDays[bulkIndex]) continue;
 
         const dateStr = format(day, 'yyyy-MM-dd');
+        const priceNum = bulkPrice ? parseFloat(bulkPrice) : null;
+        const minNightsNum = bulkMinNights ? parseInt(bulkMinNights) : null;
 
-        // Upsert pricing_rules if price or minNights given
-        if (bulkPrice || bulkMinNights) {
-          const priceNum = bulkPrice ? parseFloat(bulkPrice) : null;
-          const minNightsNum = bulkMinNights ? parseInt(bulkMinNights) : null;
+        const existingRule = pricingRules.find(
+          r => r.room_type_id === bulkRoomTypeId && r.start_date === dateStr && r.end_date === dateStr
+        );
 
-          const existingRule = pricingRules.find(
-            r => r.room_type_id === bulkRoomTypeId && r.start_date === dateStr && r.end_date === dateStr
-          );
-
-          if (existingRule) {
-            const updateData: Record<string, number> = {};
-            if (priceNum) updateData.price_per_night = priceNum;
-            if (minNightsNum) updateData.min_nights = minNightsNum;
+        if (existingRule) {
+          const updateData: Record<string, number | boolean> = {};
+          if (priceNum != null) updateData.price_per_night = priceNum;
+          if (minNightsNum != null) updateData.min_nights = minNightsNum;
+          if (applyRestrictions) {
+            updateData.closed_to_arrival = bulkClosedArrival;
+            updateData.closed_to_departure = bulkClosedDeparture;
+          }
+          if (Object.keys(updateData).length > 0) {
             await supabase.from('pricing_rules').update(updateData).eq('id', existingRule.id);
-          } else {
-            const roomType = roomTypes.find(rt => rt.id === bulkRoomTypeId);
-            const effectivePrice = priceNum || roomType?.base_price || 0;
-            const roomId = rooms.find(r => r.room_type_id === bulkRoomTypeId)?.id;
-            if (!roomId) {
-              console.error('No room found for room_type_id:', bulkRoomTypeId);
-              continue;
-            }
-            await supabase.from('pricing_rules').insert([{
-              room_id: roomId,
-              room_type_id: bulkRoomTypeId,
-              start_date: dateStr,
-              end_date: dateStr,
-              price_per_night: effectivePrice,
-              min_nights: minNightsNum || 1,
-            }]);
           }
-        }
-
-        // Upsert room_type_availability if capacity given
-        if (bulkCapacity) {
-          const count = parseInt(bulkCapacity);
-          const existingAvail = availability.find(
-            a => a.room_type_id === bulkRoomTypeId && a.date === dateStr
-          );
-
-          if (existingAvail) {
-            await supabase.from('room_type_availability').update({ available_count: count }).eq('id', existingAvail.id);
-          } else {
-            await supabase.from('room_type_availability').insert([{
-              room_type_id: bulkRoomTypeId,
-              date: dateStr,
-              available_count: count,
-            }]);
+        } else {
+          const roomType = roomTypes.find(rt => rt.id === bulkRoomTypeId);
+          const effectivePrice = priceNum || roomType?.base_price || 0;
+          const roomId = rooms.find(r => r.room_type_id === bulkRoomTypeId)?.id;
+          if (!roomId) {
+            console.error('No room found for room_type_id:', bulkRoomTypeId);
+            continue;
           }
+          await supabase.from('pricing_rules').insert([{
+            room_id: roomId,
+            room_type_id: bulkRoomTypeId,
+            start_date: dateStr,
+            end_date: dateStr,
+            price_per_night: effectivePrice,
+            min_nights: minNightsNum || 1,
+            closed_to_arrival: applyRestrictions ? bulkClosedArrival : false,
+            closed_to_departure: applyRestrictions ? bulkClosedDeparture : false,
+          }]);
         }
       }
 
       toast.success('Tömeges kitöltés mentve');
       setBulkDialogOpen(false);
       setEditedPrices({});
-      setEditedAvailability({});
+      setEditedRestrictions({});
       fetchData();
     } catch (error) {
       console.error('Bulk save error:', error);
@@ -455,7 +437,7 @@ export default function AdminPricing() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl lg:text-3xl font-semibold">Ártábla</h1>
-            <p className="text-muted-foreground mt-1">Szobatípusonkénti árak és elérhetőség</p>
+            <p className="text-muted-foreground mt-1">Szobatípusonkénti árak és korlátozások</p>
           </div>
           {hasChanges && (
             <Button onClick={savePricing} disabled={saving}>
@@ -472,7 +454,7 @@ export default function AdminPricing() {
         <Card>
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -511,7 +493,7 @@ export default function AdminPricing() {
                     />
                   </PopoverContent>
                 </Popover>
-                
+
                 <Button
                   variant="ghost"
                   size="sm"
@@ -519,6 +501,14 @@ export default function AdminPricing() {
                 >
                   Ma + 1 hónap
                 </Button>
+
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer ml-2 pl-2 border-l">
+                  <Checkbox
+                    checked={showRestrictions}
+                    onCheckedChange={(checked) => setShowRestrictions(!!checked)}
+                  />
+                  Korlátozások
+                </label>
               </div>
             </div>
           </CardHeader>
@@ -552,45 +542,40 @@ export default function AdminPricing() {
                     </thead>
                     <tbody>
                       {roomTypes.map((roomType) => (
-                        <tr key={roomType.id} className={cn("border-b", !roomType.is_active && "opacity-50")}>
-                          <td className="p-2 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
-                            <div className="font-medium text-sm">{roomType.name}</div>
-                            <div className="text-[10px] text-muted-foreground">
-                              Alap: {roomType.base_price.toLocaleString()} Ft
-                            </div>
-                            <button
-                              type="button"
-                              className="text-[10px] text-blue-600 hover:underline cursor-pointer mt-0.5"
-                              onClick={() => openBulkDialog(roomType.id)}
-                            >
-                              tömeges kitöltés
-                            </button>
-                          </td>
-                          {days.map((day) => {
-                            const dateStr = format(day, 'yyyy-MM-dd');
-                            const pricing = getPricingForDay(roomType.id, day);
-                            const edited = editedPrices[roomType.id]?.[dateStr];
-                            const displayPrice = edited?.price || (pricing.price?.toString() ?? '');
-                            const displayMinNights = edited?.minNights || (pricing.min_nights?.toString() ?? '');
-                            const availCount = getAvailabilityCount(roomType.id, dateStr);
-                            const editedAvail = editedAvailability[roomType.id]?.[dateStr];
-                            const displayAvail = editedAvail !== undefined ? editedAvail : availCount.toString();
-                            const isEdited = !!edited || editedAvail !== undefined;
-                            const isUnavailable = parseInt(displayAvail) === 0;
-                            const offSeason = !isDateInSeason(dateStr);
-
-                            return (
-                              <td
-                                key={dateStr}
-                                className={cn(
-                                  "p-0.5 align-top",
-                                  offSeason && "bg-muted/50 opacity-50",
-                                  isEdited && !offSeason && "bg-accent/20",
-                                  isUnavailable && !isEdited && !offSeason && "bg-destructive/10"
-                                )}
-                                title={offSeason ? 'Szezonon kívüli nap' : undefined}
+                        <Fragment key={roomType.id}>
+                          {/* Ár sor */}
+                          <tr key={`${roomType.id}-price`} className={cn(!showRestrictions && "border-b", !roomType.is_active && "opacity-50")}>
+                            <td className="p-2 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))] align-top">
+                              <div className="font-medium text-sm">{roomType.name}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                Kapacitás: {roomType.capacity} fő
+                              </div>
+                              <button
+                                type="button"
+                                className="text-[10px] text-blue-600 hover:underline cursor-pointer mt-0.5"
+                                onClick={() => openBulkDialog(roomType.id)}
                               >
-                                <div className="space-y-0.5">
+                                tömeges kitöltés
+                              </button>
+                            </td>
+                            {days.map((day) => {
+                              const dateStr = format(day, 'yyyy-MM-dd');
+                              const pricing = getPricingForDay(roomType.id, day);
+                              const edited = editedPrices[roomType.id]?.[dateStr];
+                              const displayPrice = edited?.price || (pricing.price?.toString() ?? '');
+                              const isEdited = !!edited;
+                              const offSeason = !isDateInSeason(dateStr);
+
+                              return (
+                                <td
+                                  key={dateStr}
+                                  className={cn(
+                                    "p-0.5 align-top",
+                                    offSeason && "bg-muted/50 opacity-50",
+                                    isEdited && !offSeason && "bg-accent/20"
+                                  )}
+                                  title={offSeason ? 'Szezonon kívüli nap' : 'Ár / éj (Ft)'}
+                                >
                                   <Input
                                     type="text"
                                     inputMode="numeric"
@@ -605,43 +590,127 @@ export default function AdminPricing() {
                                     }
                                     className="h-6 text-[11px] text-center px-1 w-[60px]"
                                   />
-                                  <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder="Min"
-                                    value={displayMinNights}
-                                    data-row={roomType.id}
-                                    data-col={dateStr}
-                                    data-field="min"
-                                    onKeyDown={handleCellKeyDown}
-                                    onChange={(e) =>
-                                      handlePriceChange(roomType.id, dateStr, 'minNights', e.target.value.replace(/[^0-9]/g, ''))
-                                    }
-                                    className="h-6 text-[11px] text-center px-1 w-[60px]"
-                                  />
-                                  <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder="Db"
-                                    value={displayAvail}
-                                    data-row={roomType.id}
-                                    data-col={dateStr}
-                                    data-field="avail"
-                                    onKeyDown={handleCellKeyDown}
-                                    onChange={(e) =>
-                                      handleAvailabilityChange(roomType.id, dateStr, e.target.value.replace(/[^0-9]/g, ''))
-                                    }
-                                    className={cn(
-                                      "h-6 text-[11px] text-center px-1 w-[60px]",
-                                      isUnavailable && "border-destructive text-destructive"
-                                    )}
-                                    title="Elérhető szobák száma"
-                                  />
-                                </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+
+                          {/* Min. éjszaka sor - csak ha a Korlátozások be van kapcsolva */}
+                          {showRestrictions && (
+                            <tr key={`${roomType.id}-min`} className={cn(!roomType.is_active && "opacity-50")}>
+                              <td className="p-2 pl-4 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
+                                <div className="text-[11px] text-muted-foreground">Min. éjszaka</div>
                               </td>
-                            );
-                          })}
-                        </tr>
+                              {days.map((day) => {
+                                const dateStr = format(day, 'yyyy-MM-dd');
+                                const pricing = getPricingForDay(roomType.id, day);
+                                const edited = editedPrices[roomType.id]?.[dateStr];
+                                const displayMinNights = edited?.minNights || (pricing.min_nights?.toString() ?? '');
+                                const isEdited = !!edited;
+                                const offSeason = !isDateInSeason(dateStr);
+
+                                return (
+                                  <td
+                                    key={dateStr}
+                                    className={cn(
+                                      "p-0.5 align-top",
+                                      offSeason && "bg-muted/50 opacity-50",
+                                      isEdited && !offSeason && "bg-accent/20"
+                                    )}
+                                    title="Minimum foglalható éjszakák száma"
+                                  >
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="Min"
+                                      value={displayMinNights}
+                                      data-row={roomType.id}
+                                      data-col={dateStr}
+                                      data-field="min"
+                                      onKeyDown={handleCellKeyDown}
+                                      onChange={(e) =>
+                                        handlePriceChange(roomType.id, dateStr, 'minNights', e.target.value.replace(/[^0-9]/g, ''))
+                                      }
+                                      className="h-6 text-[11px] text-center px-1 w-[60px]"
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          )}
+
+                          {/* Nem érkezési nap sor */}
+                          {showRestrictions && (
+                            <tr key={`${roomType.id}-arr`} className={cn(!roomType.is_active && "opacity-50")}>
+                              <td className="p-2 pl-4 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
+                                <div className="text-[11px] text-muted-foreground">Nem érkezési nap</div>
+                              </td>
+                              {days.map((day) => {
+                                const dateStr = format(day, 'yyyy-MM-dd');
+                                const pricing = getPricingForDay(roomType.id, day);
+                                const edited = editedRestrictions[roomType.id]?.[dateStr]?.closedArrival;
+                                const checked = edited !== undefined ? edited : pricing.closed_to_arrival;
+                                const isEdited = edited !== undefined;
+                                const offSeason = !isDateInSeason(dateStr);
+
+                                return (
+                                  <td
+                                    key={dateStr}
+                                    className={cn(
+                                      "p-0.5 align-top text-center",
+                                      offSeason && "bg-muted/50 opacity-50",
+                                      isEdited && !offSeason && "bg-accent/20"
+                                    )}
+                                    title="Nem lehet ezen a napon érkezni"
+                                  >
+                                    <div className="h-6 flex items-center justify-center">
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(c) => handleRestrictionChange(roomType.id, dateStr, 'closedArrival', !!c)}
+                                      />
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          )}
+
+                          {/* Nem távozási nap sor */}
+                          {showRestrictions && (
+                            <tr key={`${roomType.id}-dep`} className={cn("border-b", !roomType.is_active && "opacity-50")}>
+                              <td className="p-2 pl-4 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
+                                <div className="text-[11px] text-muted-foreground">Nem távozási nap</div>
+                              </td>
+                              {days.map((day) => {
+                                const dateStr = format(day, 'yyyy-MM-dd');
+                                const pricing = getPricingForDay(roomType.id, day);
+                                const edited = editedRestrictions[roomType.id]?.[dateStr]?.closedDeparture;
+                                const checked = edited !== undefined ? edited : pricing.closed_to_departure;
+                                const isEdited = edited !== undefined;
+                                const offSeason = !isDateInSeason(dateStr);
+
+                                return (
+                                  <td
+                                    key={dateStr}
+                                    className={cn(
+                                      "p-0.5 align-top text-center",
+                                      offSeason && "bg-muted/50 opacity-50",
+                                      isEdited && !offSeason && "bg-accent/20"
+                                    )}
+                                    title="Nem lehet ezen a napon távozni"
+                                  >
+                                    <div className="h-6 flex items-center justify-center">
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(c) => handleRestrictionChange(roomType.id, dateStr, 'closedDeparture', !!c)}
+                                      />
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -696,8 +765,11 @@ export default function AdminPricing() {
           <CardContent>
             <div className="text-sm text-muted-foreground space-y-1">
               <p>• <strong>Ár:</strong> az adott napi ár Ft-ban</p>
-              <p>• <strong>Min:</strong> minimum foglalható éjszakák száma</p>
-              <p>• <strong>Db:</strong> elérhető szobák száma az adott szobatípusból (0 = nem foglalható)</p>
+              <p>• <strong>Kapacitás:</strong> a szobatípusban elférő vendégek maximális száma (fő) — a tényleges napi foglalhatóság automatikusan, a ténylegesen felvitt szobák és a meglévő foglalások alapján számolódik, itt nem állítható</p>
+              <p>• A <strong>Korlátozások</strong> checkboxszal jeleníthetők meg és szerkeszthetők a minimum tartózkodási és érkezési/távozási szabályok (a Booking.com/szallas.hu extranet mintájára):</p>
+              <p className="pl-4">◦ <strong>Min. éjszaka:</strong> az adott naptól induló foglaláshoz szükséges minimum éjszakaszám — ezt a rendszer ténylegesen érvényesíti foglaláskor</p>
+              <p className="pl-4">◦ <strong>Nem érkezési nap:</strong> ha be van jelölve, erre a napra nem indítható foglalás (nem lehet ezen a napon érkezni)</p>
+              <p className="pl-4">◦ <strong>Nem távozási nap:</strong> ha be van jelölve, erre a napra nem fejezhető be foglalás (nem lehet ezen a napon távozni)</p>
             </div>
           </CardContent>
         </Card>
@@ -776,17 +848,7 @@ export default function AdminPricing() {
             </div>
 
             {/* Inputs */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Kapacitás (db)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="—"
-                  value={bulkCapacity}
-                  onChange={e => setBulkCapacity(e.target.value)}
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Ár (HUF)</Label>
                 <Input
@@ -808,6 +870,28 @@ export default function AdminPricing() {
                 />
               </div>
             </div>
+
+            {showRestrictions && (
+              <div className="space-y-1.5 pt-1 border-t">
+                <Label className="text-xs text-muted-foreground">Korlátozások alkalmazása minden kiválasztott napra</Label>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
+                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={bulkClosedArrival}
+                      onCheckedChange={(checked) => setBulkClosedArrival(!!checked)}
+                    />
+                    Nem érkezési nap
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={bulkClosedDeparture}
+                      onCheckedChange={(checked) => setBulkClosedDeparture(!!checked)}
+                    />
+                    Nem távozási nap
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
