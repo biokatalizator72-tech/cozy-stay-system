@@ -196,6 +196,57 @@ Deno.serve(async (req) => {
       );
     }
 
+    // --- Kontingens (allotment) ellenőrzése: hány szobát szabad eladni
+    // ezen a csatornán (web + Vapi telefon) egy adott napra ebből a
+    // szobatípusból - lehet alacsonyabb, mint a fizikai szobaszám, ha
+    // Tomi szobát tartalékol más csatornáknak (pl. Booking.com). Ha egy
+    // napra nincs explicit kontingens-sor, a teljes fizikai szobaszám a
+    // felső határ. Ez csak akkor véd meg ténylegesen a túlfoglalástól,
+    // ha ugyanez a check-availability-ben is fut (ott is fut).
+    const nightDates: string[] = [];
+    {
+      let d = new Date(check_in! + "T00:00:00Z");
+      const end = new Date(check_out! + "T00:00:00Z");
+      while (d < end) {
+        nightDates.push(d.toISOString().slice(0, 10));
+        d = new Date(d.getTime() + 86400000);
+      }
+    }
+
+    const { data: roomsOfType } = await supabase
+      .from("rooms")
+      .select("id")
+      .eq("room_type_id", room_type_id)
+      .eq("is_active", true);
+    const roomIdsOfType = (roomsOfType || []).map((r) => r.id);
+    const physicalRoomCount = roomIdsOfType.length;
+
+    const { data: contingentRows } = await supabase
+      .from("room_type_contingent")
+      .select("date, contingent")
+      .eq("room_type_id", room_type_id)
+      .in("date", nightDates);
+
+    const { data: overlappingForType } = await supabase
+      .from("bookings")
+      .select("check_in, check_out")
+      .in("room_id", roomIdsOfType.length > 0 ? roomIdsOfType : ["00000000-0000-0000-0000-000000000000"])
+      .in("status", ["pending", "confirmed"])
+      .lt("check_in", check_out)
+      .gte("check_out", check_in);
+
+    for (const d of nightDates) {
+      const contingentRow = contingentRows?.find((c) => c.date === d);
+      const cap = contingentRow ? contingentRow.contingent : physicalRoomCount;
+      const booked = (overlappingForType || []).filter((b) => b.check_in <= d && b.check_out > d).length;
+      if (booked >= cap) {
+        return new Response(
+          JSON.stringify({ error: "Sajnos a kiválasztott szobatípus a megadott időszakban már nem elérhető ezen a csatornán." }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // --- Default total_price ---
     if (total_price == null || total_price === undefined) {
       const nights = Math.max(

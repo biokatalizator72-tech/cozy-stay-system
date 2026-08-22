@@ -52,11 +52,13 @@ export default function AdminPricing() {
   const [rooms, setRooms] = useState<{ id: string; room_type_id: string | null }[]>([]);
   const [activeBookings, setActiveBookings] = useState<{ room_id: string | null; check_in: string; check_out: string }[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [contingentRules, setContingentRules] = useState<{ id: string; room_type_id: string; date: string; contingent: number }[]>([]);
   const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedPrices, setEditedPrices] = useState<Record<string, Record<string, { price: string; minNights: string }>>>({});
   const [editedRestrictions, setEditedRestrictions] = useState<Record<string, Record<string, { closedArrival?: boolean; closedDeparture?: boolean }>>>({});
+  const [editedContingent, setEditedContingent] = useState<Record<string, Record<string, string>>>({});
   const [showRestrictions, setShowRestrictions] = useState(false);
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -70,6 +72,7 @@ export default function AdminPricing() {
   const [bulkDays, setBulkDays] = useState<boolean[]>([true, true, true, true, true, true, true]);
   const [bulkPrice, setBulkPrice] = useState('');
   const [bulkMinNights, setBulkMinNights] = useState('');
+  const [bulkContingent, setBulkContingent] = useState('');
   const [bulkClosedArrival, setBulkClosedArrival] = useState(false);
   const [bulkClosedDeparture, setBulkClosedDeparture] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -92,9 +95,9 @@ export default function AdminPricing() {
 
   // Adott napon hány szoba szabad ténylegesen egy szobatípusból: a
   // típushoz tartozó összes szoba mínusz azok, amiken aznapra átfedő
-  // aktív (pending/confirmed) foglalás van. Csak megjelenítés — ezt a
-  // számot a check-availability/create-booking függvények számolják ki
-  // valójában foglaláskor, itt csak tájékoztató.
+  // aktív (pending/confirmed) foglalás van. Ez a live érték jelenik meg
+  // az "Elérhető szobák" sorban alapértelmezésként, amíg admin explicit
+  // kontingenst (room_type_contingent sor) nem állít be arra a napra.
   const getAvailableRoomsForDay = (roomTypeId: string, dateStr: string): number => {
     const total = roomCountByType[roomTypeId] || 0;
     const roomIdsOfType = new Set(
@@ -104,6 +107,25 @@ export default function AdminPricing() {
       (b) => b.room_id && roomIdsOfType.has(b.room_id) && b.check_in <= dateStr && b.check_out > dateStr
     ).length;
     return Math.max(0, total - bookedCount);
+  };
+
+  // Explicit kontingens-sor egy adott napra (ha van) - ez a felső határ,
+  // amennyit ezen a csatornán el szabad adni ebből a típusból aznapra,
+  // akkor is, ha fizikailag több szoba lenne szabad (más csatornáknak,
+  // pl. Booking.com-nak tartalékolva).
+  const getContingentForDay = (roomTypeId: string, dateStr: string): number | null => {
+    const rule = contingentRules.find((c) => c.room_type_id === roomTypeId && c.date === dateStr);
+    return rule ? rule.contingent : null;
+  };
+
+  const handleContingentChange = (roomTypeId: string, dateStr: string, value: string) => {
+    setEditedContingent((prev) => ({
+      ...prev,
+      [roomTypeId]: {
+        ...prev[roomTypeId],
+        [dateStr]: value,
+      },
+    }));
   };
 
   // First effect: fetch seasons and set initial date range
@@ -172,6 +194,12 @@ export default function AdminPricing() {
       .lt('check_in', endDate)
       .gt('check_out', startDate);
 
+    const { data: contingentData } = await supabase
+      .from('room_type_contingent')
+      .select('*')
+      .gte('date', startDate)
+      .lte('date', endDate);
+
     const { data: settingsData } = await supabase
       .from('property_settings')
       .select('deposit_percent')
@@ -181,6 +209,7 @@ export default function AdminPricing() {
     setRooms(roomsData || []);
     setActiveBookings(bookingsData || []);
     setPricingRules(rulesData || []);
+    setContingentRules(contingentData || []);
     if (settingsData?.deposit_percent != null) {
       setDepositPercent(settingsData.deposit_percent);
     }
@@ -323,9 +352,34 @@ export default function AdminPricing() {
         }
       }
 
+      // Kontingens-szerkesztések mentése (room_type_contingent) - külön
+      // táblában van, mert nem a pricing_rules egy-nap-egy-sor logikáját
+      // követi (lehet, hogy csak a kontingenst módosítja az admin, ár
+      // vagy korlátozás nélkül is).
+      for (const roomTypeId of Object.keys(editedContingent)) {
+        for (const dateStr of Object.keys(editedContingent[roomTypeId])) {
+          const value = editedContingent[roomTypeId][dateStr];
+          if (value === '') continue;
+          const contingentNum = parseInt(value);
+          if (isNaN(contingentNum)) continue;
+
+          const existing = contingentRules.find(
+            (c) => c.room_type_id === roomTypeId && c.date === dateStr
+          );
+          if (existing) {
+            await supabase.from('room_type_contingent').update({ contingent: contingentNum }).eq('id', existing.id);
+          } else {
+            await supabase.from('room_type_contingent').insert([
+              { room_type_id: roomTypeId, date: dateStr, contingent: contingentNum },
+            ]);
+          }
+        }
+      }
+
       toast.success('Árak és korlátozások mentve');
       setEditedPrices({});
       setEditedRestrictions({});
+      setEditedContingent({});
       fetchData();
     } catch (error) {
       console.error('Pricing save error:', error);
@@ -335,7 +389,10 @@ export default function AdminPricing() {
     setSaving(false);
   };
 
-  const hasChanges = Object.keys(editedPrices).length > 0 || Object.keys(editedRestrictions).length > 0;
+  const hasChanges =
+    Object.keys(editedPrices).length > 0 ||
+    Object.keys(editedRestrictions).length > 0 ||
+    Object.keys(editedContingent).length > 0;
 
   const handleCellKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Tab') return;
@@ -381,6 +438,7 @@ export default function AdminPricing() {
     setBulkDays([true, true, true, true, true, true, true]);
     setBulkPrice('');
     setBulkMinNights('');
+    setBulkContingent('');
     setBulkClosedArrival(false);
     setBulkClosedDeparture(false);
     setBulkDialogOpen(true);
@@ -389,7 +447,7 @@ export default function AdminPricing() {
   const saveBulk = async () => {
     if (!bulkRoomTypeId || !bulkDateFrom || !bulkDateTo) return;
     const applyRestrictions = showRestrictions && (bulkClosedArrival || bulkClosedDeparture);
-    if (!bulkPrice && !bulkMinNights && !applyRestrictions) {
+    if (!bulkPrice && !bulkMinNights && !bulkContingent && !applyRestrictions) {
       toast.error('Legalább egy mezőt ki kell tölteni');
       return;
     }
@@ -444,12 +502,30 @@ export default function AdminPricing() {
             closed_to_departure: applyRestrictions ? bulkClosedDeparture : false,
           }]);
         }
+
+        // Kontingens (room_type_contingent) tömeges beállítása
+        if (bulkContingent) {
+          const contingentNum = parseInt(bulkContingent);
+          const existingContingent = contingentRules.find(
+            c => c.room_type_id === bulkRoomTypeId && c.date === dateStr
+          );
+          if (existingContingent) {
+            await supabase.from('room_type_contingent').update({ contingent: contingentNum }).eq('id', existingContingent.id);
+          } else {
+            await supabase.from('room_type_contingent').insert([{
+              room_type_id: bulkRoomTypeId,
+              date: dateStr,
+              contingent: contingentNum,
+            }]);
+          }
+        }
       }
 
       toast.success('Tömeges kitöltés mentve');
       setBulkDialogOpen(false);
       setEditedPrices({});
       setEditedRestrictions({});
+      setEditedContingent({});
       fetchData();
     } catch (error) {
       console.error('Bulk save error:', error);
@@ -634,34 +710,60 @@ export default function AdminPricing() {
                             })}
                           </tr>
 
-                          {/* Elérhető szobák sor - mindig látszik, automatikusan számolt, nem szerkeszthető */}
+                          {/* Elérhető szobák sor - mindig látszik. Alapból az élőben számolt
+                              szabad szobaszámot mutatja; ha admin beír egy alacsonyabb
+                              értéket, az kontingensként elmentődik (room_type_contingent) és
+                              onnantól ez a felső határ ezen a csatornán, akkor is, ha
+                              fizikailag több szoba lenne szabad (pl. Booking.com-nak
+                              tartalékolva). */}
                           <tr key={`${roomType.id}-avail`} className={cn(!showRestrictions && "border-b", !roomType.is_active && "opacity-50")}>
                             <td className="p-2 pl-4 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
                               <div className="text-[11px] text-muted-foreground">Elérhető szobák</div>
                             </td>
                             {days.map((day) => {
                               const dateStr = format(day, 'yyyy-MM-dd');
-                              const available = getAvailableRoomsForDay(roomType.id, dateStr);
+                              const liveAvailable = getAvailableRoomsForDay(roomType.id, dateStr);
+                              const contingent = getContingentForDay(roomType.id, dateStr);
+                              const edited = editedContingent[roomType.id]?.[dateStr];
+                              const displayValue = edited !== undefined ? edited : (contingent ?? liveAvailable).toString();
+                              const isEdited = edited !== undefined;
+                              const hasExplicitContingent = contingent !== null;
                               const offSeason = !isDateInSeason(dateStr);
+                              const numericValue = parseInt(displayValue);
+                              const isZero = !isNaN(numericValue) && numericValue === 0;
 
                               return (
                                 <td
                                   key={dateStr}
                                   className={cn(
-                                    "p-0.5 align-top text-center",
+                                    "p-0.5 align-top",
                                     offSeason && "bg-muted/50 opacity-50",
-                                    available === 0 && !offSeason && "bg-destructive/10"
+                                    isEdited && !offSeason && "bg-accent/20",
+                                    isZero && !offSeason && "bg-destructive/10"
                                   )}
-                                  title="Ténylegesen szabad szobák száma (szobák száma mínusz aktív foglalások) - automatikusan számolt, nem szerkeszthető"
+                                  title={
+                                    hasExplicitContingent
+                                      ? "Beállított kontingens erre a napra (felülírja az élő szabad szobaszámot)"
+                                      : "Élőben számolt szabad szobaszám - írj be egy alacsonyabb értéket, ha kontingenst akarsz beállítani (pl. Booking.com-nak)"
+                                  }
                                 >
-                                  <div
+                                  <Input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={displayValue}
+                                    data-row={roomType.id}
+                                    data-col={dateStr}
+                                    data-field="avail"
+                                    onKeyDown={handleCellKeyDown}
+                                    onChange={(e) =>
+                                      handleContingentChange(roomType.id, dateStr, e.target.value.replace(/[^0-9]/g, ''))
+                                    }
                                     className={cn(
-                                      "h-6 flex items-center justify-center text-[11px] font-medium",
-                                      available === 0 ? "text-destructive" : "text-muted-foreground"
+                                      "h-6 text-[11px] text-center px-1 w-[60px]",
+                                      isZero && "border-destructive text-destructive",
+                                      !hasExplicitContingent && !isEdited && "text-muted-foreground"
                                     )}
-                                  >
-                                    {available}
-                                  </div>
+                                  />
                                 </td>
                               );
                             })}
@@ -838,7 +940,7 @@ export default function AdminPricing() {
             <div className="text-sm text-muted-foreground space-y-1">
               <p>• <strong>Ár:</strong> az adott napi ár Ft-ban</p>
               <p>• <strong>Kapacitás:</strong> hány konkrét szoba tartozik ehhez a szobatípushoz (a "Szobák" oldalon felvitt szobák száma) — itt csak megjelenik, a szobák hozzáadása/törlése a "Szobák" oldalon történik</p>
-              <p>• <strong>Elérhető szobák:</strong> naponta automatikusan számolt érték (Kapacitás mínusz az aznapra eső aktív foglalások) — nem szerkeszthető, csak tájékoztató; piros háttér, ha aznapra 0 szoba maradt</p>
+              <p>• <strong>Elérhető szobák:</strong> alapból naponta automatikusan számolt érték (Kapacitás mínusz az aznapra eső aktív foglalások), szürke számmal. Ha ide alacsonyabb számot írsz be és elmented, az onnantól <strong>kontingens</strong>ként rögzül: ennyi szobát enged eladni a rendszer ezen a csatornán (web + telefon) arra a napra, akkor is, ha fizikailag több lenne szabad — így tudsz szobát tartalékolni más csatornáknak (pl. Booking.com). Piros háttér, ha aznapra 0 maradt</p>
               <p>• A <strong>Korlátozások</strong> checkboxszal jeleníthetők meg és szerkeszthetők a minimum tartózkodási és érkezési/távozási szabályok (a Booking.com/szallas.hu extranet mintájára):</p>
               <p className="pl-4">◦ <strong>Min. éjszaka:</strong> az adott naptól induló foglaláshoz szükséges minimum éjszakaszám — ezt a rendszer ténylegesen érvényesíti foglaláskor</p>
               <p className="pl-4">◦ <strong>Nem érkezési nap:</strong> ha be van jelölve, erre a napra nem indítható foglalás (nem lehet ezen a napon érkezni)</p>
@@ -921,7 +1023,7 @@ export default function AdminPricing() {
             </div>
 
             {/* Inputs */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Ár (HUF)</Label>
                 <Input
@@ -940,6 +1042,16 @@ export default function AdminPricing() {
                   placeholder="—"
                   value={bulkMinNights}
                   onChange={e => setBulkMinNights(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Kontingens (db)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="—"
+                  value={bulkContingent}
+                  onChange={e => setBulkContingent(e.target.value)}
                 />
               </div>
             </div>

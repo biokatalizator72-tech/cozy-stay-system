@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     // Ezek közül melyik room_id-kra van átfedő, aktív foglalás
     const { data: overlappingBookings, error: bkError } = await supabase
       .from("bookings")
-      .select("room_id")
+      .select("room_id, check_in, check_out")
       .in("room_id", roomIds.length > 0 ? roomIds : ["00000000-0000-0000-0000-000000000000"])
       .in("status", ["pending", "confirmed"])
       .lt("check_in", check_out)
@@ -76,11 +76,64 @@ Deno.serve(async (req) => {
 
     // Ténylegesen szabad room_id-k típusonkénti csoportosítása
     const freeRoomsByType: Record<string, string[]> = {};
+    const roomCountByType: Record<string, number> = {};
+    const roomIdToType = new Map<string, string>();
     for (const r of rooms || []) {
       if (!r.room_type_id) continue;
+      roomIdToType.set(r.id, r.room_type_id);
+      roomCountByType[r.room_type_id] = (roomCountByType[r.room_type_id] || 0) + 1;
       if (bookedRoomIds.has(r.id)) continue;
       (freeRoomsByType[r.room_type_id] ||= []).push(r.id);
     }
+
+    // Kontingens (allotment): hány szobát szabad ELADNI ezen a csatornán
+    // (web + Vapi telefon) egy adott napra egy szobatípusból - ez lehet
+    // alacsonyabb, mint a fizikai szobaszám, ha Tomi szobát tartalékol
+    // más csatornáknak (pl. Booking.com), amik nincsenek élő szinkronban
+    // ezzel a rendszerrel. Ha nincs explicit kontingens-sor egy napra,
+    // a teljes fizikai szobaszám a felső határ.
+    const nightDates: string[] = [];
+    {
+      let d = new Date(check_in + "T00:00:00Z");
+      const end = new Date(check_out + "T00:00:00Z");
+      while (d < end) {
+        nightDates.push(d.toISOString().slice(0, 10));
+        d = new Date(d.getTime() + 86400000);
+      }
+    }
+
+    const { data: contingentRows } = await supabase
+      .from("room_type_contingent")
+      .select("room_type_id, date, contingent")
+      .in("room_type_id", roomTypes.map((rt) => rt.id))
+      .in("date", nightDates);
+
+    const contingentByTypeDate = new Map<string, number>();
+    (contingentRows || []).forEach((c) => {
+      contingentByTypeDate.set(`${c.room_type_id}|${c.date}`, c.contingent);
+    });
+
+    const bookedCountByTypeDate = new Map<string, number>();
+    for (const b of overlappingBookings || []) {
+      const typeId = roomIdToType.get(b.room_id);
+      if (!typeId) continue;
+      for (const d of nightDates) {
+        if (b.check_in <= d && b.check_out > d) {
+          const key = `${typeId}|${d}`;
+          bookedCountByTypeDate.set(key, (bookedCountByTypeDate.get(key) || 0) + 1);
+        }
+      }
+    }
+
+    const remainingContingent = (typeId: string): number => {
+      let min = Infinity;
+      for (const d of nightDates) {
+        const cap = contingentByTypeDate.get(`${typeId}|${d}`) ?? (roomCountByType[typeId] || 0);
+        const booked = bookedCountByTypeDate.get(`${typeId}|${d}`) || 0;
+        min = Math.min(min, cap - booked);
+      }
+      return min === Infinity ? (roomCountByType[typeId] || 0) : min;
+    };
 
     // Korlátozások (Ártábla admin oldal "Korlátozások" nézete): minimum
     // éjszakaszám az érkezési naphoz kötve, "Nem érkezési nap" az érkezési
@@ -108,7 +161,7 @@ Deno.serve(async (req) => {
       }
     });
 
-    // Determine available room types based on actual free rooms + korlátozások
+    // Determine available room types based on actual free rooms + korlátozások + kontingens
     const availableRoomTypes = roomTypes
       .filter((rt) => (freeRoomsByType[rt.id]?.length || 0) > 0)
       .filter((rt) => {
@@ -119,6 +172,7 @@ Deno.serve(async (req) => {
         if (departureRule?.closed_to_departure) return false;
         return true;
       })
+      .filter((rt) => remainingContingent(rt.id) > 0)
       .map((rt) => ({
         id: rt.id,
         name: rt.name,
@@ -127,7 +181,7 @@ Deno.serve(async (req) => {
         capacity: rt.capacity,
         base_capacity: rt.base_capacity,
         amenities: rt.amenities,
-        available_rooms: freeRoomsByType[rt.id]?.length || 0,
+        available_rooms: Math.min(freeRoomsByType[rt.id]?.length || 0, remainingContingent(rt.id)),
         available_room_ids: freeRoomsByType[rt.id] || [],
       }));
 
