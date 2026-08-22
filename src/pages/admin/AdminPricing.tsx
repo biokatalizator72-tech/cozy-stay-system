@@ -50,6 +50,7 @@ const DAY_LABELS = ['Hétfő', 'Kedd', 'Szerda', 'Csütörtök', 'Péntek', 'Szo
 export default function AdminPricing() {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [rooms, setRooms] = useState<{ id: string; room_type_id: string | null }[]>([]);
+  const [activeBookings, setActiveBookings] = useState<{ room_id: string | null; check_in: string; check_out: string }[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [seasons, setSeasons] = useState<{ start_date: string; end_date: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,6 +89,22 @@ export default function AdminPricing() {
     acc[r.room_type_id] = (acc[r.room_type_id] || 0) + 1;
     return acc;
   }, {});
+
+  // Adott napon hány szoba szabad ténylegesen egy szobatípusból: a
+  // típushoz tartozó összes szoba mínusz azok, amiken aznapra átfedő
+  // aktív (pending/confirmed) foglalás van. Csak megjelenítés — ezt a
+  // számot a check-availability/create-booking függvények számolják ki
+  // valójában foglaláskor, itt csak tájékoztató.
+  const getAvailableRoomsForDay = (roomTypeId: string, dateStr: string): number => {
+    const total = roomCountByType[roomTypeId] || 0;
+    const roomIdsOfType = new Set(
+      rooms.filter((r) => r.room_type_id === roomTypeId).map((r) => r.id)
+    );
+    const bookedCount = activeBookings.filter(
+      (b) => b.room_id && roomIdsOfType.has(b.room_id) && b.check_in <= dateStr && b.check_out > dateStr
+    ).length;
+    return Math.max(0, total - bookedCount);
+  };
 
   // First effect: fetch seasons and set initial date range
   useEffect(() => {
@@ -144,6 +161,17 @@ export default function AdminPricing() {
       .from('rooms')
       .select('id, room_type_id');
 
+    // Aktív (pending/confirmed) foglalások, amik átfedik a látott
+    // időszakot — ebből számoljuk ki naponta, ténylegesen hány szoba
+    // szabad az adott szobatípusból (ugyanaz a logika, mint a
+    // check-availability edge function-ben, csak itt darabszám szinten).
+    const { data: bookingsData } = await supabase
+      .from('bookings')
+      .select('room_id, check_in, check_out')
+      .in('status', ['pending', 'confirmed'])
+      .lt('check_in', endDate)
+      .gt('check_out', startDate);
+
     const { data: settingsData } = await supabase
       .from('property_settings')
       .select('deposit_percent')
@@ -151,6 +179,7 @@ export default function AdminPricing() {
 
     setRoomTypes(roomTypesData || []);
     setRooms(roomsData || []);
+    setActiveBookings(bookingsData || []);
     setPricingRules(rulesData || []);
     if (settingsData?.deposit_percent != null) {
       setDepositPercent(settingsData.deposit_percent);
@@ -554,7 +583,7 @@ export default function AdminPricing() {
                       {roomTypes.map((roomType) => (
                         <Fragment key={roomType.id}>
                           {/* Ár sor */}
-                          <tr key={`${roomType.id}-price`} className={cn(!showRestrictions && "border-b", !roomType.is_active && "opacity-50")}>
+                          <tr key={`${roomType.id}-price`} className={cn(!roomType.is_active && "opacity-50")}>
                             <td className="p-2 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))] align-top">
                               <div className="font-medium text-sm">{roomType.name}</div>
                               <div className="text-[10px] text-muted-foreground">
@@ -600,6 +629,39 @@ export default function AdminPricing() {
                                     }
                                     className="h-6 text-[11px] text-center px-1 w-[60px]"
                                   />
+                                </td>
+                              );
+                            })}
+                          </tr>
+
+                          {/* Elérhető szobák sor - mindig látszik, automatikusan számolt, nem szerkeszthető */}
+                          <tr key={`${roomType.id}-avail`} className={cn(!showRestrictions && "border-b", !roomType.is_active && "opacity-50")}>
+                            <td className="p-2 pl-4 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))]">
+                              <div className="text-[11px] text-muted-foreground">Elérhető szobák</div>
+                            </td>
+                            {days.map((day) => {
+                              const dateStr = format(day, 'yyyy-MM-dd');
+                              const available = getAvailableRoomsForDay(roomType.id, dateStr);
+                              const offSeason = !isDateInSeason(dateStr);
+
+                              return (
+                                <td
+                                  key={dateStr}
+                                  className={cn(
+                                    "p-0.5 align-top text-center",
+                                    offSeason && "bg-muted/50 opacity-50",
+                                    available === 0 && !offSeason && "bg-destructive/10"
+                                  )}
+                                  title="Ténylegesen szabad szobák száma (szobák száma mínusz aktív foglalások) - automatikusan számolt, nem szerkeszthető"
+                                >
+                                  <div
+                                    className={cn(
+                                      "h-6 flex items-center justify-center text-[11px] font-medium",
+                                      available === 0 ? "text-destructive" : "text-muted-foreground"
+                                    )}
+                                  >
+                                    {available}
+                                  </div>
                                 </td>
                               );
                             })}
@@ -775,7 +837,8 @@ export default function AdminPricing() {
           <CardContent>
             <div className="text-sm text-muted-foreground space-y-1">
               <p>• <strong>Ár:</strong> az adott napi ár Ft-ban</p>
-              <p>• <strong>Kapacitás:</strong> hány konkrét szoba tartozik ehhez a szobatípushoz (a "Szobák" oldalon felvitt szobák száma) — itt csak megjelenik, a szobák hozzáadása/törlése a "Szobák" oldalon történik. A napi foglalhatóság ebből és a meglévő foglalásokból automatikusan számolódik</p>
+              <p>• <strong>Kapacitás:</strong> hány konkrét szoba tartozik ehhez a szobatípushoz (a "Szobák" oldalon felvitt szobák száma) — itt csak megjelenik, a szobák hozzáadása/törlése a "Szobák" oldalon történik</p>
+              <p>• <strong>Elérhető szobák:</strong> naponta automatikusan számolt érték (Kapacitás mínusz az aznapra eső aktív foglalások) — nem szerkeszthető, csak tájékoztató; piros háttér, ha aznapra 0 szoba maradt</p>
               <p>• A <strong>Korlátozások</strong> checkboxszal jeleníthetők meg és szerkeszthetők a minimum tartózkodási és érkezési/távozási szabályok (a Booking.com/szallas.hu extranet mintájára):</p>
               <p className="pl-4">◦ <strong>Min. éjszaka:</strong> az adott naptól induló foglaláshoz szükséges minimum éjszakaszám — ezt a rendszer ténylegesen érvényesíti foglaláskor</p>
               <p className="pl-4">◦ <strong>Nem érkezési nap:</strong> ha be van jelölve, erre a napra nem indítható foglalás (nem lehet ezen a napon érkezni)</p>
