@@ -22,7 +22,6 @@ interface RoomType {
   id: string;
   name: string;
   base_price: number;
-  capacity: number;
   is_active: boolean;
 }
 
@@ -79,6 +78,17 @@ export default function AdminPricing() {
     ? eachDayOfInterval({ start: dateRange.from, end: dateRange.to })
     : [];
 
+  // Hány konkrét szoba tartozik az adott szobatípushoz (a "Szobák" admin
+  // oldalon felvitt rooms sorokból számolva) — ez a tényleges, foglalható
+  // szoba-darabszám, ami a napi elérhetőséget vezérli a check-availability
+  // / create-booking függvényekben. Itt csak megjelenítjük, nem
+  // szerkeszthető: a szobák hozzáadása/törlése a "Szobák" oldalon történik.
+  const roomCountByType = rooms.reduce<Record<string, number>>((acc, r) => {
+    if (!r.room_type_id) return acc;
+    acc[r.room_type_id] = (acc[r.room_type_id] || 0) + 1;
+    return acc;
+  }, {});
+
   // First effect: fetch seasons and set initial date range
   useEffect(() => {
     const initDateRange = async () => {
@@ -118,7 +128,7 @@ export default function AdminPricing() {
 
     const { data: roomTypesData } = await supabase
       .from('room_types')
-      .select('id, name, base_price, capacity, is_active')
+      .select('id, name, base_price, is_active')
       .order('sort_order');
 
     const startDate = format(dateRange.from, 'yyyy-MM-dd');
@@ -548,7 +558,7 @@ export default function AdminPricing() {
                             <td className="p-2 sticky left-0 bg-card z-10 border-r border-border shadow-[2px_0_4px_-2px_hsl(var(--border))] align-top">
                               <div className="font-medium text-sm">{roomType.name}</div>
                               <div className="text-[10px] text-muted-foreground">
-                                Kapacitás: {roomType.capacity} fő
+                                Kapacitás: {roomCountByType[roomType.id] ?? 0} szoba
                               </div>
                               <button
                                 type="button"
@@ -765,7 +775,7 @@ export default function AdminPricing() {
           <CardContent>
             <div className="text-sm text-muted-foreground space-y-1">
               <p>• <strong>Ár:</strong> az adott napi ár Ft-ban</p>
-              <p>• <strong>Kapacitás:</strong> a szobatípusban elférő vendégek maximális száma (fő) — a tényleges napi foglalhatóság automatikusan, a ténylegesen felvitt szobák és a meglévő foglalások alapján számolódik, itt nem állítható</p>
+              <p>• <strong>Kapacitás:</strong> hány konkrét szoba tartozik ehhez a szobatípushoz (a "Szobák" oldalon felvitt szobák száma) — itt csak megjelenik, a szobák hozzáadása/törlése a "Szobák" oldalon történik. A napi foglalhatóság ebből és a meglévő foglalásokból automatikusan számolódik</p>
               <p>• A <strong>Korlátozások</strong> checkboxszal jeleníthetők meg és szerkeszthetők a minimum tartózkodási és érkezési/távozási szabályok (a Booking.com/szallas.hu extranet mintájára):</p>
               <p className="pl-4">◦ <strong>Min. éjszaka:</strong> az adott naptól induló foglaláshoz szükséges minimum éjszakaszám — ezt a rendszer ténylegesen érvényesíti foglaláskor</p>
               <p className="pl-4">◦ <strong>Nem érkezési nap:</strong> ha be van jelölve, erre a napra nem indítható foglalás (nem lehet ezen a napon érkezni)</p>
